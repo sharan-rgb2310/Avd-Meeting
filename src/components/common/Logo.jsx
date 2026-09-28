@@ -1,11 +1,10 @@
 import { cx } from '../../utils/format'
 import avDynamicsLogo from '../../assets/AV Dynamics Logo.jpg'
-import workspaceLogo from '../../assets/AV Dynamics Logo White_page-0001.jpg'
 
 const LOGO_SIZES = { sm: 26, md: 34, lg: 44 }
 const LOGO_VARIANTS = {
   default: { image: avDynamicsLogo, containerClass: 'bg-white', imageClass: '' },
-  workspace: { image: workspaceLogo, containerClass: 'bg-brand', imageClass: 'mix-blend-screen invert' },
+  workspace: { image: avDynamicsLogo, containerClass: 'bg-brand', imageClass: 'mix-blend-screen invert' },
 }
 
 /**
