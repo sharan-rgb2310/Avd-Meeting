@@ -2,50 +2,33 @@ import { useEffect, useState } from 'react'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import AppRoutes from './routes/AppRoutes'
-import { KEYS, clearData, initializeSeedData } from './services/storageService'
+import { configureRemotePersistence, initializeSeedData } from './services/storageService'
+import { persistWorkspaceChange } from './services/supabaseWorkspaceService'
+import { supabase } from './utils/supabase'
 import seed from './data/seedData'
 
 const App = () => {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    const connectedMode = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY)
-    const demoCleanupKey = 'avdynamics_demo_workspace_cleared'
-    let active = true
-    let unsubscribe = () => { }
-
-    if (!connectedMode) {
-      initializeSeedData(seed)
-    } else if (!window.localStorage.getItem(demoCleanupKey)) {
-      ;[
-        KEYS.companies,
-        KEYS.teams,
-        KEYS.meetings,
-        KEYS.remoteMeetingIds,
-        KEYS.actionItems,
-        KEYS.documents,
-        KEYS.notifications,
-        KEYS.activity,
-      ].forEach(clearData)
-      window.localStorage.setItem(demoCleanupKey, '1')
-    }
-
-    if (connectedMode) {
-      import('./services/supabaseRealtimeService')
-        .then(({ subscribeToRemoteMeetings }) => {
-          if (active) unsubscribe = subscribeToRemoteMeetings()
-        })
-        .catch((error) => console.warn('Supabase realtime could not start:', error.message))
-    }
+    configureRemotePersistence(persistWorkspaceChange)
+    if (!supabase && !import.meta.env.PROD) initializeSeedData(seed)
     setReady(true)
-
-    return () => {
-      active = false
-      unsubscribe()
-    }
   }, [])
 
   if (!ready) return null
+  if (import.meta.env.PROD && !supabase) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-canvas px-5">
+        <section role="alert" className="max-w-lg rounded-xl border border-line bg-white p-6 shadow-card">
+          <h1 className="text-lg font-semibold text-ink">Cloud storage is not configured</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your Vercel project settings, then redeploy.
+          </p>
+        </section>
+      </main>
+    )
+  }
 
   return (
     <ToastProvider>

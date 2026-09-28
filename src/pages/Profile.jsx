@@ -265,19 +265,27 @@ const ChangePasswordModal = ({ open, onClose, userId, onSaved }) => {
   const [confirm, setConfirm] = useState('')
   const [show, setShow] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   if (!open) return null
 
-  const submit = () => {
+  const submit = async () => {
     if (!current || !next) return setError('Please fill in every field.')
     if (next !== confirm) return setError('The new passwords do not match.')
-    const result = changePassword(userId, { current, next })
-    if (!result.ok) return setError(result.error)
-    setCurrent('')
-    setNext('')
-    setConfirm('')
-    setError('')
-    return onSaved()
+    setLoading(true)
+    try {
+      const result = await changePassword(userId, { current, next })
+      if (!result.ok) return setError(result.error)
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+      setError('')
+      return onSaved()
+    } catch (submitError) {
+      setError(submitError.message || 'Password update failed.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -292,7 +300,7 @@ const ChangePasswordModal = ({ open, onClose, userId, onSaved }) => {
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit}>Update password</Button>
+          <Button loading={loading} onClick={submit}>Update password</Button>
         </>
       }
     >

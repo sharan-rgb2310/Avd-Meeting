@@ -7,6 +7,7 @@ import Logo from '../components/common/Logo'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { validateSignup } from '../utils/validators'
+import { supabase } from '../utils/supabase'
 
 const FEATURES = [
   { icon: CalendarCheck2, label: 'Centralized meeting management' },
@@ -97,20 +98,30 @@ const SignUp = () => {
     setFormError('')
   }
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
     const fieldErrors = validateSignup(values)
     setErrors(fieldErrors)
     if (Object.keys(fieldErrors).length) return
     setLoading(true)
-    const result = signup(values)
-    setLoading(false)
-    if (!result.ok) {
-      setFormError(result.error)
-      return
+    try {
+      const result = await signup(values)
+      if (!result.ok) {
+        setFormError(result.error)
+        return
+      }
+      if (result.needsEmailConfirmation) {
+        toast('Check your email to confirm your account, then sign in.', 'info')
+        navigate('/login', { replace: true })
+        return
+      }
+      toast('Welcome to AV DYNAMICS.')
+      navigate('/dashboard', { replace: true })
+    } catch (error) {
+      setFormError(error.message || 'Account creation failed. Please try again.')
+    } finally {
+      setLoading(false)
     }
-    toast('Welcome to AV DYNAMICS.')
-    navigate('/dashboard', { replace: true })
   }
 
   return (
@@ -216,7 +227,7 @@ const SignUp = () => {
             </p>
 
             <p className="mt-8 text-center text-[11px] text-muted">
-              AV DYNAMICS Meeting Management · Data stays in this browser
+              AV DYNAMICS Meeting Management · {supabase ? 'Data syncs to your account.' : 'Demo data stays in this browser.'}
             </p>
           </div>
         </div>

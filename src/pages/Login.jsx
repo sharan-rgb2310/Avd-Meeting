@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { requestPasswordReset } from '../services/authService'
 import { isEmail, validateLogin } from '../utils/validators'
+import { supabase } from '../utils/supabase'
 
 const FEATURES = [
   { icon: CalendarCheck2, label: 'Centralized meeting management' },
@@ -173,19 +174,24 @@ const Login = () => {
     setFormError('')
   }
 
-  const signIn = (credentials) => {
+  const signIn = async (credentials) => {
     const fieldErrors = validateLogin(credentials)
     setErrors(fieldErrors)
     if (Object.keys(fieldErrors).length) return
     setLoading(true)
-    const result = login({ ...credentials, remember })
-    setLoading(false)
-    if (!result.ok) {
-      setFormError(result.error)
-      return
+    try {
+      const result = await login({ ...credentials, remember })
+      if (!result.ok) {
+        setFormError(result.error)
+        return
+      }
+      toast('Welcome back to AV DYNAMICS.')
+      navigate('/dashboard', { replace: true })
+    } catch (error) {
+      setFormError(error.message || 'Sign in failed. Please try again.')
+    } finally {
+      setLoading(false)
     }
-    toast('Welcome back to AV DYNAMICS.')
-    navigate('/dashboard', { replace: true })
   }
 
   return (
@@ -252,7 +258,7 @@ const Login = () => {
               />
 
               <div className="flex items-center justify-between">
-                <Checkbox label="Remember me" checked={remember} onChange={setRemember} />
+                {!supabase && <Checkbox label="Remember me" checked={remember} onChange={setRemember} />}
                 <button
                   type="button"
                   onClick={() => setForgotOpen(true)}
@@ -275,7 +281,7 @@ const Login = () => {
             </p>
 
             <p className="mt-8 text-center text-[11px] text-muted">
-              AV DYNAMICS Meeting Management · Data stays in this browser
+              AV DYNAMICS Meeting Management · {supabase ? 'Data syncs to your account.' : 'Demo data stays in this browser.'}
             </p>
           </div>
         </div>

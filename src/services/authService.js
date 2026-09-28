@@ -1,5 +1,6 @@
 import { KEYS, getData, setData, clearData, session, findItem } from './storageService'
 import seed from '../data/seedData'
+import { supabase } from '../utils/supabase'
 
 const AUTH_KEY = KEYS.auth
 
@@ -35,7 +36,16 @@ export const getCurrentUser = () => {
   return findItem(KEYS.users, current.userId)
 }
 
-export const login = ({ email, password, remember = false }) => {
+export const login = async ({ email, password, remember = false }) => {
+  if (supabase) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: String(email).trim().toLowerCase(),
+      password,
+    })
+    if (error) return { ok: false, error: error.message }
+    return { ok: true, session: data.session, user: data.user }
+  }
+
   const users = getData(KEYS.users, [])
   const user = users.find((u) => u.email.toLowerCase() === String(email).trim().toLowerCase())
   if (!user || user.password !== password) {
@@ -59,10 +69,22 @@ export const login = ({ email, password, remember = false }) => {
   return { ok: true, session: payload, user }
 }
 
-// Creates a workspace account from the Sign Up page and signs the new user in.
-// This mirrors login(): it talks only to the existing local persistence layer
-// (storageService), the same "backend" login()/changePassword() already use.
-export const signUp = ({ name, email, password }) => {
+// Uses Supabase Auth when configured; local credentials are only for demo mode.
+export const signUp = async ({ name, email, password }) => {
+  if (supabase) {
+    const { data, error } = await supabase.auth.signUp({
+      email: String(email).trim().toLowerCase(),
+      password,
+      options: {
+        data: { name: name.trim() },
+        emailRedirectTo: window.location.origin,
+      },
+    })
+    if (error) return { ok: false, error: error.message }
+    if (!data.session) return { ok: true, needsEmailConfirmation: true, user: data.user }
+    return { ok: true, session: data.session, user: data.user }
+  }
+
   const users = getData(KEYS.users, [])
   const normalizedEmail = String(email).trim().toLowerCase()
   if (users.some((u) => u.email.toLowerCase() === normalizedEmail)) {
@@ -91,9 +113,16 @@ export const signUp = ({ name, email, password }) => {
   return { ok: true, session: payload, user }
 }
 
-export const logout = () => {
+export const logout = async () => {
+  if (supabase) {
+    const { error } = await supabase.auth.signOut()
+    clearData(AUTH_KEY)
+    session.remove(AUTH_KEY)
+    return { ok: !error, error: error?.message }
+  }
   clearData(AUTH_KEY)
   session.remove(AUTH_KEY)
+  return { ok: true }
 }
 
 export const requestPasswordReset = (email) => {
@@ -102,7 +131,16 @@ export const requestPasswordReset = (email) => {
   return { ok: true, matched: exists }
 }
 
-export const changePassword = (userId, { current, next }) => {
+export const changePassword = async (userId, { current, next }) => {
+  if (supabase) {
+    const { data, error: userError } = await supabase.auth.getUser()
+    if (userError || !data.user || data.user.id !== userId) return { ok: false, error: 'Account not found.' }
+    const { error: reauthError } = await supabase.auth.signInWithPassword({ email: data.user.email, password: current })
+    if (reauthError) return { ok: false, error: 'Current password is incorrect.' }
+    const { error } = await supabase.auth.updateUser({ password: next })
+    return error ? { ok: false, error: error.message } : { ok: true }
+  }
+
   const user = findItem(KEYS.users, userId)
   if (!user) return { ok: false, error: 'Account not found.' }
   if (user.password !== current) return { ok: false, error: 'Current password is incorrect.' }

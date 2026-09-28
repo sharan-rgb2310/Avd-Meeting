@@ -17,9 +17,25 @@ export const KEYS = {
   notifications: 'avdynamics_notifications',
   settings: 'avdynamics_settings',
   activity: 'avdynamics_activity',
+  cloudOwner: 'avdynamics_cloud_owner',
 }
 
 const memory = new Map()
+let remotePersister = null
+let remotePersistencePaused = 0
+
+export const configureRemotePersistence = (persist) => {
+  remotePersister = persist
+}
+
+export const withoutRemotePersistence = (callback) => {
+  remotePersistencePaused += 1
+  try {
+    return callback()
+  } finally {
+    remotePersistencePaused -= 1
+  }
+}
 
 const driver = () => {
   try {
@@ -45,10 +61,17 @@ const read = (key) => {
 }
 
 const write = (key, value) => {
+  const previous = read(key)
   const store = driver()
   memory.set(key, value)
   if (store) store.setItem(key, JSON.stringify(value))
   window.dispatchEvent(new CustomEvent('avdynamics:store', { detail: { key } }))
+  if (remotePersister && !remotePersistencePaused) {
+    Promise.resolve(remotePersister(key, value, previous)).catch((error) => {
+      console.warn('Workspace data could not be saved to Supabase:', error.message)
+      window.dispatchEvent(new CustomEvent('avdynamics:sync-error', { detail: { message: error.message } }))
+    })
+  }
   return value
 }
 

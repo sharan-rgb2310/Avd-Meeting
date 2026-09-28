@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import ToastStack from '../components/ui/Toast'
 import { uid } from '../utils/format'
 
@@ -6,6 +6,7 @@ const ToastContext = createContext({ toast: () => {} })
 
 export const ToastProvider = ({ children }) => {
   const [items, setItems] = useState([])
+  const lastSyncErrorAt = useRef(0)
 
   const dismiss = useCallback((id) => {
     setItems((prev) => prev.filter((t) => t.id !== id))
@@ -20,6 +21,16 @@ export const ToastProvider = ({ children }) => {
     },
     [dismiss]
   )
+
+  useEffect(() => {
+    const onSyncError = (event) => {
+      if (Date.now() - lastSyncErrorAt.current < 5000) return
+      lastSyncErrorAt.current = Date.now()
+      toast(`Cloud save failed: ${event.detail?.message || 'Please try again.'}`, 'error')
+    }
+    window.addEventListener('avdynamics:sync-error', onSyncError)
+    return () => window.removeEventListener('avdynamics:sync-error', onSyncError)
+  }, [toast])
 
   const value = useMemo(() => ({ toast, dismiss }), [toast, dismiss])
 

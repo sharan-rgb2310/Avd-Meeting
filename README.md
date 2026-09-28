@@ -1,6 +1,6 @@
 # AV DYNAMICS · Meeting Management
 
-An enterprise meeting management, CRM and productivity workspace built with React and Vite. The existing UI remains usable offline with LocalStorage, while Supabase now provides the database foundation and a read query for meetings.
+An enterprise meeting management, CRM and productivity workspace built with React and Vite. Without Supabase configuration, the app runs in local demo mode. With Supabase configured, accounts use Supabase Auth and workspace records sync to a private per-account database store.
 
 ---
 
@@ -9,8 +9,9 @@ An enterprise meeting management, CRM and productivity workspace built with Reac
 **Authentication**
 - Premium two-column login page with the AV DYNAMICS brand panel
 - Inline email/password validation, password visibility toggle, loading and disabled button states
-- Remember me (LocalStorage) vs. session-only sign in (sessionStorage)
-- Simulated forgot-password flow, demo account autofill, protected and public-only routes, logout
+- Persistent Supabase Auth sessions, protected and public-only routes, logout
+- LocalStorage/sessionStorage demo authentication when Supabase is not configured
+- Simulated forgot-password flow
 
 **Dashboard**
 - Three highlighted meeting cards — Today's (blue), Tomorrow's (green) and Upcoming (amber, after tomorrow) — computed live from the meetings store; each opens the Meetings list filtered to the same set
@@ -68,7 +69,7 @@ An enterprise meeting management, CRM and productivity workspace built with Reac
 | Styling | Tailwind CSS 3 with a custom AV DYNAMICS token set |
 | Icons | Lucide React |
 | Charts | Recharts |
-| Persistence | LocalStorage / sessionStorage, with Supabase database integration |
+| Persistence | LocalStorage cache with Supabase Auth and per-account database sync |
 
 ---
 
@@ -81,7 +82,7 @@ npm run build    # production build into dist/
 npm run preview  # serve the production build
 ```
 
-The Supabase client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env`. Copy `.env.example` when configuring another project. The supplied project already has the meeting workspace schema applied. Meeting rows are hydrated from Supabase when available and subscribed through Postgres Realtime; the seeded LocalStorage meetings remain as a fallback until remote rows exist.
+The Supabase client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env`. Use real project values; the placeholder values in `.env.example` do not connect. For Vercel, add both variables under Project Settings → Environment Variables for each deployment environment, then redeploy. In Supabase Authentication → URL Configuration, set the deployed app as the Site URL and add its origin to Redirect URLs. Email confirmation is enabled, so new users must confirm their address before signing in.
 
 Optional Supabase agent instructions:
 
@@ -91,7 +92,7 @@ npx skills add supabase/agent-skills
 
 ## Supabase database
 
-The database contains `profiles`, `companies`, `teams`, `meetings`, `meeting_participants`, `action_items`, `documents`, `notifications`, `workspace_settings`, and the protected `meeting_email_queue` table. RLS is enabled on every table. The browser currently has read access to meetings and participants only; writes should be moved behind authenticated Supabase calls when the app's LocalStorage authentication is replaced with Supabase Auth.
+The app stores credentials in Supabase Auth and saves its user, company, team, meeting, action-item, document, notification, settings, and activity collections in `public.workspace_records`. Every record is scoped to `auth.uid()` by RLS; passwords are never copied into workspace records. Existing browser records are imported for the first account on that browser, with seeded demo rows removed. Legacy normalized tables remain locked to browser roles.
 
 ## Gmail meeting invitations
 
@@ -128,12 +129,12 @@ UI (pages + components)
 services/*        ← all business logic and the only place that knows about storage
         │  calls
         ▼
-services/storageService.js   ← the single LocalStorage boundary
+      services/storageService.js   ← LocalStorage cache and remote persistence hook
 ```
 
 - **No component touches `window.localStorage`.** Everything goes through `storageService`.
-- Every write broadcasts a `avdynamics:store` CustomEvent. The `useStore` hook subscribes to it, so any screen reading a collection re-renders the moment another screen mutates it — changes are reflected instantly without a refresh.
-- Seed data is written once on first launch (`initializeSeedData`) and never overwritten afterwards, so your edits survive reloads.
+- Every write broadcasts a `avdynamics:store` CustomEvent. The `useStore` hook subscribes to it, so any screen reading a collection re-renders when another screen mutates it.
+- Local demo mode seeds fixtures once. Configured Supabase mode loads the signed-in user's cloud records and syncs future changes; the browser cache is refreshed from the account on sign-in.
 - Context providers: `ToastProvider` (global toasts) and `AuthProvider` (session, current user, login/logout).
 
 ### Project structure
@@ -173,7 +174,7 @@ src/
 | Key | Shape |
 | --- | --- |
 | `avdynamics_auth` | `{ userId, name, email, role, remember, signedInAt }` |
-| `avdynamics_users` | `[{ id, name, email, password, role, status, authMethod, teamId, department, phone, title, lastSeen, createdAt }]` |
+| `avdynamics_users` | `[{ id, name, email, role, status, authMethod, teamId, department, phone, title, lastSeen, createdAt }]` (local demo mode may contain legacy passwords; remote sync strips them) |
 | `avdynamics_companies` | `[{ id, name, industry, status, contactName, email, phone, website, location, notes, createdAt }]` |
 | `avdynamics_teams` | `[{ id, name, department, leadId, memberIds[], status, description, createdAt }]` |
 | `avdynamics_meetings` | `[{ id, ref, title, companyId, companyName, department, date, startTime, type, status, responsibleId, createdBy, agenda, notes, decisions, actionItemsText, remarks, participants[{ userId, type }], createdAt }] — `companyName` is only set when the company was typed in manually; older meetings may still carry `teamId`, `endTime`, `location`, `link`, `aiSummary`, `recordingUrl` (kept, no longer shown)` |
