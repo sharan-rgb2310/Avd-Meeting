@@ -1,4 +1,5 @@
 import { KEYS, getData, setData, clearData, session, findItem } from './storageService'
+import seed from '../data/seedData'
 
 const AUTH_KEY = KEYS.auth
 
@@ -12,6 +13,15 @@ const toSession = (user, remember) => ({
   remember,
   signedInAt: new Date().toISOString(),
 })
+
+const removeSeedRecords = () => {
+  Object.entries(seed).forEach(([key, records]) => {
+    if (!Array.isArray(records)) return
+    const seedIds = new Set(records.map((record) => record.id))
+    if (!seedIds.size) return
+    setData(key, getData(key, []).filter((record) => !seedIds.has(record.id)))
+  })
+}
 
 export const getCurrentSession = () => {
   const persisted = getData(AUTH_KEY, null)
@@ -73,7 +83,8 @@ export const signUp = ({ name, email, password }) => {
     lastSeen: new Date().toISOString(),
     createdAt: new Date().toISOString(),
   }
-  setData(KEYS.users, [user, ...users])
+  removeSeedRecords()
+  setData(KEYS.users, [user, ...getData(KEYS.users, [])])
   const payload = toSession(user, true)
   setData(AUTH_KEY, payload)
   session.remove(AUTH_KEY)
