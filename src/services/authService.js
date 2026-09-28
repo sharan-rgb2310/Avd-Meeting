@@ -11,6 +11,9 @@ const signUpError = (error) => {
   if (error.code === 'user_already_exists' || /already registered|user already exists/i.test(error.message)) {
     return { ok: false, field: 'email', error: 'An account with this email already exists.' }
   }
+  if (error.code === 'over_email_send_rate_limit' || error.status === 429) {
+    return { ok: false, error: 'Too many signup attempts. Please wait a few minutes and try again.' }
+  }
   if (error.code === 'weak_password') {
     return { ok: false, field: 'password', error: error.message }
   }
@@ -55,7 +58,7 @@ export const login = async ({ email, password, remember = false }) => {
       email: String(email).trim().toLowerCase(),
       password,
     })
-    if (error) return signUpError(error)
+    if (error) return { ok: false, error: error.message || 'Sign in failed. Please try again.' }
     return { ok: true, session: data.session, user: data.user }
   }
 
@@ -88,13 +91,13 @@ export const signUp = async ({ name, email, password }) => {
     const { data, error } = await supabase.auth.signUp({
       email: String(email).trim().toLowerCase(),
       password,
-      options: {
-        data: { name: name.trim() },
-        emailRedirectTo: window.location.origin,
-      },
+      options: { data: { name: name.trim() } },
     })
-    if (error) return { ok: false, error: error.message }
-    if (!data.session) return { ok: true, needsEmailConfirmation: true, user: data.user }
+    if (error) return signUpError(error)
+    if (data.user?.identities?.length === 0) {
+      return { ok: false, field: 'email', error: 'An account with this email already exists.' }
+    }
+    if (!data.session) return { ok: false, error: 'Supabase did not start a session. Please try signing in.' }
     return { ok: true, session: data.session, user: data.user }
   }
 

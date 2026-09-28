@@ -111,11 +111,6 @@ const SignUp = () => {
         else setFormError(result.error)
         return
       }
-      if (result.needsEmailConfirmation) {
-        toast('Check your email to confirm your account, then sign in.', 'info')
-        navigate('/login', { replace: true })
-        return
-      }
       toast('Welcome to AV DYNAMICS.')
       navigate('/dashboard', { replace: true })
     } catch (error) {

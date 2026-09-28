@@ -93,7 +93,7 @@ export const AuthProvider = ({ children }) => {
 
   const signup = useCallback((details) => {
     return authService.signUp(details).then(async (result) => {
-      if (!result.ok || result.needsEmailConfirmation) return result
+      if (!result.ok) return result
       if (supabase) {
         const restored = await applySession(result.session)
         if (!restored) return { ok: false, error: 'Account created, but your cloud workspace could not be loaded.' }

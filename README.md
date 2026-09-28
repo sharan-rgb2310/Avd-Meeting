@@ -82,7 +82,7 @@ npm run build    # production build into dist/
 npm run preview  # serve the production build
 ```
 
-The Supabase client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env`. Use real project values; the placeholder values in `.env.example` do not connect. For Vercel, add both variables under Project Settings → Environment Variables for each deployment environment, then redeploy. In Supabase Authentication → URL Configuration, set the deployed app as the Site URL and add its origin to Redirect URLs. Email confirmation is enabled, so new users must confirm their address before signing in.
+The Supabase client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env`. Use real project values; the placeholder values in `.env.example` do not connect. For Vercel, add both variables under Project Settings → Environment Variables for each deployment environment, then redeploy. In Supabase Authentication → URL Configuration, set the deployed app as the Site URL and add its origin to Redirect URLs. Email confirmation is disabled so signup does not send rate-limited confirmation emails; Supabase still validates addresses and prevents duplicate accounts.
 
 Optional Supabase agent instructions:
 
