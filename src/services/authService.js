@@ -4,6 +4,19 @@ import { supabase } from '../utils/supabase'
 
 const AUTH_KEY = KEYS.auth
 
+const signUpError = (error) => {
+  if (error.code === 'email_address_invalid' || /invalid email|email address.*invalid/i.test(error.message)) {
+    return { ok: false, field: 'email', error: 'Enter a valid email address.' }
+  }
+  if (error.code === 'user_already_exists' || /already registered|user already exists/i.test(error.message)) {
+    return { ok: false, field: 'email', error: 'An account with this email already exists.' }
+  }
+  if (error.code === 'weak_password') {
+    return { ok: false, field: 'password', error: error.message }
+  }
+  return { ok: false, error: error.message || 'Account creation failed. Please try again.' }
+}
+
 export const DEMO_CREDENTIALS = { email: 'admin@avdynamics.com', password: 'Admin@123' }
 
 const toSession = (user, remember) => ({
@@ -42,7 +55,7 @@ export const login = async ({ email, password, remember = false }) => {
       email: String(email).trim().toLowerCase(),
       password,
     })
-    if (error) return { ok: false, error: error.message }
+    if (error) return signUpError(error)
     return { ok: true, session: data.session, user: data.user }
   }
 

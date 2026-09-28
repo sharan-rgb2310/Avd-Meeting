@@ -107,7 +107,8 @@ const SignUp = () => {
     try {
       const result = await signup(values)
       if (!result.ok) {
-        setFormError(result.error)
+        if (result.field) setErrors((current) => ({ ...current, [result.field]: result.error }))
+        else setFormError(result.error)
         return
       }
       if (result.needsEmailConfirmation) {

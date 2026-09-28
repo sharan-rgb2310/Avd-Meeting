@@ -16,7 +16,6 @@ export const validateSignup = ({ name, email, password, confirmPassword }) => {
   const errors = {}
   if (required(name)) errors.name = 'Enter your full name.'
   if (required(email)) errors.email = 'Enter your email address.'
-  else if (!isEmail(email)) errors.email = 'Enter a valid email address, like name@company.com.'
   if (required(password)) errors.password = 'Enter a password.'
   else if (password.length < 6) errors.password = 'Passwords are at least 6 characters.'
   if (required(confirmPassword)) errors.confirmPassword = 'Confirm your password.'
