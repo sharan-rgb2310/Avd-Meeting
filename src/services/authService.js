@@ -1,8 +1,18 @@
 import { KEYS, getData, setData, clearData, session, findItem } from './storageService'
-import seed from '../data/seedData'
 import { supabase } from '../utils/supabase'
 
 const AUTH_KEY = KEYS.auth
+const PASSWORD_RECOVERY_KEY = 'avdynamics:password-recovery'
+const MAX_ADMIN_ACCOUNTS = 3
+
+export const hasPasswordRecoverySession = () =>
+  window.sessionStorage.getItem(PASSWORD_RECOVERY_KEY) === 'true'
+
+export const markPasswordRecoverySession = () =>
+  window.sessionStorage.setItem(PASSWORD_RECOVERY_KEY, 'true')
+
+export const clearPasswordRecoverySession = () =>
+  window.sessionStorage.removeItem(PASSWORD_RECOVERY_KEY)
 
 const signUpError = (error) => {
   if (error.code === 'email_address_invalid' || /invalid email|email address.*invalid/i.test(error.message)) {
@@ -20,8 +30,6 @@ const signUpError = (error) => {
   return { ok: false, error: error.message || 'Account creation failed. Please try again.' }
 }
 
-export const DEMO_CREDENTIALS = { email: 'admin@avdynamics.com', password: 'Admin@123' }
-
 const toSession = (user, remember) => ({
   userId: user.id,
   name: user.name,
@@ -30,15 +38,6 @@ const toSession = (user, remember) => ({
   remember,
   signedInAt: new Date().toISOString(),
 })
-
-const removeSeedRecords = () => {
-  Object.entries(seed).forEach(([key, records]) => {
-    if (!Array.isArray(records)) return
-    const seedIds = new Set(records.map((record) => record.id))
-    if (!seedIds.size) return
-    setData(key, getData(key, []).filter((record) => !seedIds.has(record.id)))
-  })
-}
 
 export const getCurrentSession = () => {
   const persisted = getData(AUTH_KEY, null)
@@ -50,6 +49,20 @@ export const getCurrentUser = () => {
   const current = getCurrentSession()
   if (!current) return null
   return findItem(KEYS.users, current.userId)
+}
+
+export const getAdminSignupAvailability = async () => {
+  if (!supabase) {
+    const adminCount = getData(KEYS.users, []).filter((user) => user.role === 'Admin').length
+    return adminCount < MAX_ADMIN_ACCOUNTS
+  }
+
+  const { data, error } = await supabase.functions.invoke('signup-role-options')
+  if (error) throw new Error(error.message || 'Admin role availability could not be checked.')
+  if (typeof data?.available !== 'boolean') {
+    throw new Error('Admin role availability returned an invalid response.')
+  }
+  return data.available
 }
 
 export const login = async ({ email, password, remember = false }) => {
@@ -68,7 +81,7 @@ export const login = async ({ email, password, remember = false }) => {
     return { ok: false, error: 'Invalid email or password.' }
   }
   if (user.status === 'Inactive') {
-    return { ok: false, error: 'This account is inactive. Ask an admin to reactivate it.' }
+    return { ok: false, error: 'This account is inactive. Contact workspace support to reactivate it.' }
   }
   const payload = toSession(user, remember)
   if (remember) {
@@ -85,13 +98,29 @@ export const login = async ({ email, password, remember = false }) => {
   return { ok: true, session: payload, user }
 }
 
-// Uses Supabase Auth when configured; local credentials are only for demo mode.
-export const signUp = async ({ name, email, password }) => {
+export const signUp = async ({ name, email, role, password }) => {
+  const normalizedRole = typeof role === 'string' ? role.trim() : ''
+  if (!normalizedRole) {
+    return { ok: false, field: 'role', error: 'Enter your role.' }
+  }
+  if (normalizedRole.length > 80) {
+    return { ok: false, field: 'role', error: 'Role must be 80 characters or fewer.' }
+  }
+  const selectedRole = normalizedRole.toLowerCase() === 'admin' ? 'Admin' : normalizedRole
+  if (selectedRole === 'Admin') {
+    try {
+      if (!await getAdminSignupAvailability()) {
+        return { ok: false, field: 'role', error: 'All Admin signup positions have been taken. Choose another role.' }
+      }
+    } catch (error) {
+      return { ok: false, error: error.message || 'Admin role availability could not be checked.' }
+    }
+  }
   if (supabase) {
     const { data, error } = await supabase.auth.signUp({
       email: String(email).trim().toLowerCase(),
       password,
-      options: { data: { name: name.trim() } },
+      options: { data: { name: name.trim(), role: selectedRole } },
     })
     if (error) return signUpError(error)
     if (data.user?.identities?.length === 0) {
@@ -111,7 +140,7 @@ export const signUp = async ({ name, email, password }) => {
     name: name.trim(),
     email: normalizedEmail,
     password,
-    role: 'Team Member',
+    role: selectedRole,
     status: 'Activated',
     authMethod: 'Email',
     teamId: '',
@@ -121,7 +150,6 @@ export const signUp = async ({ name, email, password }) => {
     lastSeen: new Date().toISOString(),
     createdAt: new Date().toISOString(),
   }
-  removeSeedRecords()
   setData(KEYS.users, [user, ...getData(KEYS.users, [])])
   const payload = toSession(user, true)
   setData(AUTH_KEY, payload)
@@ -141,10 +169,30 @@ export const logout = async () => {
   return { ok: true }
 }
 
-export const requestPasswordReset = (email) => {
+export const requestPasswordReset = async (email) => {
+  const normalizedEmail = String(email).trim().toLowerCase()
+  if (supabase) {
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    return error ? { ok: false, error: error.message || 'Password reset email could not be sent.' } : { ok: true }
+  }
+
   const users = getData(KEYS.users, [])
-  const exists = users.some((u) => u.email.toLowerCase() === String(email).trim().toLowerCase())
+  const exists = users.some((u) => u.email.toLowerCase() === normalizedEmail)
   return { ok: true, matched: exists }
+}
+
+export const completePasswordReset = async (nextPassword) => {
+  if (!supabase) return { ok: false, error: 'Password reset requires a Supabase connection.' }
+  const { data, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError) return { ok: false, error: sessionError.message }
+  if (!data.session) return { ok: false, error: 'This reset link is invalid or has expired. Request a new one.' }
+
+  const { error } = await supabase.auth.updateUser({ password: nextPassword })
+  if (error) return { ok: false, error: error.message || 'Password could not be updated.' }
+  clearPasswordRecoverySession()
+  return { ok: true }
 }
 
 export const changePassword = async (userId, { current, next }) => {

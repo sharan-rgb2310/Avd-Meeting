@@ -9,12 +9,12 @@ import { documentTypeFor } from '../../services/documentsService'
 import { fileSize } from '../../utils/format'
 import { required } from '../../utils/validators'
 
-const MAX_INLINE_BYTES = 4 * 1024 * 1024 // keep LocalStorage well inside quota
-
 const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies = [], lockedMeetingId }) => {
-  const [values, setValues] = useState({ name: '', type: 'PDF', size: 0, meetingId: '', companyId: '', dataUrl: '' })
+  const [values, setValues] = useState({ name: '', type: 'PDF', size: 0, meetingId: '', companyId: '' })
   const [errors, setErrors] = useState({})
   const [notice, setNotice] = useState('')
+  const [file, setFile] = useState(null)
+  const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
 
   useEffect(() => {
@@ -22,10 +22,12 @@ const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies
     const meeting = meetings.find((m) => m.id === lockedMeetingId)
     setValues({
       name: '', type: 'PDF', size: 0,
-      meetingId: lockedMeetingId || '', companyId: meeting?.companyId || '', dataUrl: '',
+      meetingId: lockedMeetingId || '', companyId: meeting?.companyId || '',
     })
     setErrors({})
     setNotice('')
+    setFile(null)
+    setSaving(false)
   }, [open, lockedMeetingId, meetings])
 
   const set = (key) => (e) => {
@@ -42,27 +44,23 @@ const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies
 
   const pickFile = (file) => {
     if (!file) return
+    setFile(file)
     setValues((v) => ({ ...v, name: file.name, type: documentTypeFor(file.name), size: file.size }))
     setErrors((prev) => ({ ...prev, name: undefined }))
-    if (file.size > MAX_INLINE_BYTES) {
-      setNotice(`${fileSize(file.size)} is too large to keep in the browser, so only the file details are stored.`)
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      setValues((v) => ({ ...v, dataUrl: String(reader.result) }))
-      setNotice('File kept in this browser, so preview and download work.')
-    }
-    reader.onerror = () => setNotice('The file could not be read. Its details are still saved.')
-    reader.readAsDataURL(file)
+    setNotice('File will be stored in this browser and available to preview and download here.')
   }
 
-  const submit = () => {
+  const submit = async () => {
     const next = {}
     if (required(values.name)) next.name = 'Choose a file or enter a document name.'
     setErrors(next)
     if (Object.keys(next).length) return
-    onSubmit(values)
+    setSaving(true)
+    try {
+      await onSubmit({ ...values, file })
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -76,7 +74,7 @@ const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit}>Upload document</Button>
+          <Button onClick={submit} loading={saving}>Upload document</Button>
         </>
       }
     >
@@ -111,7 +109,10 @@ const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies
             </div>
             <button
               type="button"
-              onClick={() => setValues((v) => ({ ...v, name: '', size: 0, dataUrl: '' }))}
+              onClick={() => {
+                setFile(null)
+                setValues((v) => ({ ...v, name: '', size: 0 }))
+              }}
               aria-label="Remove selected file"
               className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-ink"
             >

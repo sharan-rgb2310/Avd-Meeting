@@ -146,9 +146,3 @@ export const session = {
     }
   },
 }
-
-export const initializeSeedData = (seed) => {
-  Object.entries(seed).forEach(([key, value]) => {
-    if (read(key) === null) write(key, value)
-  })
-}

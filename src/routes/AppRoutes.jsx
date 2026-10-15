@@ -5,6 +5,7 @@ import ProtectedRoute, { PublicOnlyRoute } from './ProtectedRoute'
 
 const Login = lazy(() => import('../pages/Login'))
 const SignUp = lazy(() => import('../pages/SignUp'))
+const ResetPassword = lazy(() => import('../pages/ResetPassword'))
 const Dashboard = lazy(() => import('../pages/Dashboard'))
 const Companies = lazy(() => import('../pages/Companies'))
 const CompanyDetails = lazy(() => import('../pages/CompanyDetails'))
@@ -41,6 +42,7 @@ const AppRoutes = () => (
           </PublicOnlyRoute>
         }
       />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />

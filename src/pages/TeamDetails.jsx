@@ -42,7 +42,8 @@ const TeamDetails = () => {
   const members = users.filter((u) => (team.memberIds || []).includes(u.id))
   const lead = users.find((u) => u.id === team.leadId)
   const meetingIds = meetings.map((m) => m.id)
-  const actionItems = getData(KEYS.actionItems, []).filter(
+  const [allActionItems] = useStore(() => getData(KEYS.actionItems, []))
+  const actionItems = allActionItems.filter(
     (a) => meetingIds.includes(a.meetingId) || (team.memberIds || []).includes(a.assigneeId)
   )
   const companyName = (cid) => companies.find((c) => c.id === cid)?.name || '—'

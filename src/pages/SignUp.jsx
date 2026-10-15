@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CalendarCheck2, CheckSquare, Eye, EyeOff, FolderOpen, Lock, Mail, User, Users2 } from 'lucide-react'
 import Button from '../components/ui/Button'
@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { validateSignup } from '../utils/validators'
 import { supabase } from '../utils/supabase'
+import { getAdminSignupAvailability } from '../services/authService'
 
 const FEATURES = [
   { icon: CalendarCheck2, label: 'Centralized meeting management' },
@@ -82,15 +83,33 @@ const BrandPanel = () => (
 )
 
 const SignUp = () => {
-  const [values, setValues] = useState({ name: '', email: '', password: '', confirmPassword: '' })
+  const [values, setValues] = useState({ name: '', email: '', role: '', password: '', confirmPassword: '' })
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [adminRoleAvailable, setAdminRoleAvailable] = useState(null)
+  const [adminRoleAvailabilityError, setAdminRoleAvailabilityError] = useState('')
   const { signup } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    let active = true
+    getAdminSignupAvailability()
+      .then((available) => {
+        if (active) setAdminRoleAvailable(available)
+      })
+      .catch((error) => {
+        console.error('Admin signup availability could not be checked:', error)
+        if (active) setAdminRoleAvailabilityError('Admin role availability could not be checked. You can still sign up with another role.')
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const set = (key) => (e) => {
     setValues((v) => ({ ...v, [key]: e.target.value }))
@@ -107,7 +126,12 @@ const SignUp = () => {
     try {
       const result = await signup(values)
       if (!result.ok) {
-        if (result.field) setErrors((current) => ({ ...current, [result.field]: result.error }))
+        if (result.field) {
+          setErrors((current) => ({ ...current, [result.field]: result.error }))
+          if (result.field === 'role' && values.role.trim().toLowerCase() === 'admin') {
+            setAdminRoleAvailable(false)
+          }
+        }
         else setFormError(result.error)
         return
       }
@@ -136,7 +160,7 @@ const SignUp = () => {
             </span>
             <h1 className="text-[26px] font-semibold tracking-tight text-ink">Create your account</h1>
             <p className="mt-1.5 text-[13px] text-muted">
-              Set up your AV DYNAMICS workspace to manage meetings, teams and follow-ups in one place.
+              Enter your role. There can be up to three Admin accounts.
             </p>
 
             <form className="mt-7 space-y-4" noValidate onSubmit={submit}>
@@ -166,6 +190,20 @@ const SignUp = () => {
                 value={values.email}
                 onChange={set('email')}
                 error={errors.email}
+              />
+
+              <Input
+                label="Role"
+                value={values.role}
+                onChange={set('role')}
+                placeholder="Enter your role"
+                maxLength={80}
+                error={errors.role}
+                hint={adminRoleAvailabilityError || (adminRoleAvailable === null
+                  ? 'Checking Admin availability…'
+                  : adminRoleAvailable
+                    ? 'Admin is available until there are three Admin accounts.'
+                    : 'The maximum of three Admin accounts is currently reached.')}
               />
 
               <Input
@@ -223,7 +261,7 @@ const SignUp = () => {
             </p>
 
             <p className="mt-8 text-center text-[11px] text-muted">
-              AV DYNAMICS Meeting Management · {supabase ? 'Data syncs to your account.' : 'Demo data stays in this browser.'}
+              AV DYNAMICS Meeting Management · {supabase ? 'Data syncs to your account.' : 'Local workspace data stays in this browser.'}
             </p>
           </div>
         </div>

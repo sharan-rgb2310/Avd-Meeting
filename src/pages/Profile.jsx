@@ -203,27 +203,46 @@ const Profile = () => {
 const EditProfileModal = ({ open, onClose, user, teams, onSaved }) => {
   const [values, setValues] = useState(user)
   const [errors, setErrors] = useState({})
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const set = (key) => (e) => setValues((v) => ({ ...v, [key]: e.target.value }))
 
+  useEffect(() => {
+    if (!open) return
+    setValues(user)
+    setErrors({})
+    setFormError('')
+  }, [open, user])
+
   if (!open) return null
 
-  const submit = () => {
+  const submit = async () => {
     const next = {}
     if (!values.name?.trim()) next.name = 'Please enter a name.'
     if (!values.email?.trim()) next.email = 'Please enter an email address.'
     else if (!isEmail(values.email)) next.email = 'Please enter a valid email address.'
+    if (values.role?.trim().length > 80) next.role = 'Role must be 80 characters or fewer.'
     setErrors(next)
+    setFormError('')
     if (Object.keys(next).length) return
-    updateUser(user.id, {
-      name: values.name.trim(),
-      email: values.email.trim(),
-      phone: values.phone,
-      title: values.title,
-      department: values.department,
-      teamId: values.teamId,
-    })
-    onSaved()
+    setSaving(true)
+    try {
+      await updateUser(user.id, {
+        name: values.name.trim(),
+        role: values.role?.trim() || '',
+        email: values.email.trim(),
+        phone: values.phone,
+        title: values.title,
+        department: values.department,
+        teamId: values.teamId,
+      })
+      onSaved()
+    } catch (error) {
+      setFormError(error.message || 'Profile could not be updated.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -234,17 +253,27 @@ const EditProfileModal = ({ open, onClose, user, teams, onSaved }) => {
       description="Update your personal details."
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={submit}>Save changes</Button>
+          <Button onClick={submit} loading={saving}>Save changes</Button>
         </>
       }
     >
+      {formError && <div role="alert" className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">{formError}</div>}
       <div className="grid gap-4 sm:grid-cols-2">
         <Input label="Full name" value={values.name || ''} onChange={set('name')} error={errors.name} />
         <Input label="Email address" type="email" value={values.email || ''} onChange={set('email')} error={errors.email} />
         <Input label="Phone" value={values.phone || ''} onChange={set('phone')} />
+        <Input
+          label="Role"
+          value={values.role || ''}
+          onChange={set('role')}
+          placeholder="Enter your role"
+          maxLength={80}
+          error={errors.role}
+          hint="Admin is limited to three accounts and cannot be self-assigned from Profile settings."
+        />
         <Input label="Job title" value={values.title || ''} onChange={set('title')} />
         <Select label="Department" options={DEPARTMENTS} placeholder="Select department" value={values.department || ''} onChange={set('department')} />
         <Select

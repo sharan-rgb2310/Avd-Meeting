@@ -12,10 +12,12 @@ export const validateLogin = ({ email, password }) => {
   return errors
 }
 
-export const validateSignup = ({ name, email, password, confirmPassword }) => {
+export const validateSignup = ({ name, email, role, password, confirmPassword }) => {
   const errors = {}
   if (required(name)) errors.name = 'Enter your full name.'
   if (required(email)) errors.email = 'Enter your email address.'
+  if (required(role)) errors.role = 'Enter your role.'
+  else if (String(role).trim().length > 80) errors.role = 'Role must be 80 characters or fewer.'
   if (required(password)) errors.password = 'Enter a password.'
   else if (password.length < 6) errors.password = 'Passwords are at least 6 characters.'
   if (required(confirmPassword)) errors.confirmPassword = 'Confirm your password.'
