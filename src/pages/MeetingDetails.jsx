@@ -74,7 +74,7 @@ const MeetingDetails = () => {
   const [meeting] = useStore(() => getData(KEYS.meetings, []).find((m) => m.id === id) || null, [id])
   const [companies] = useStore(() => getData(KEYS.companies, []))
   const [users] = useStore(() => getData(KEYS.users, []))
-  const [actionItems] = useStore(() => getData(KEYS.actionItems, []).filter((a) => a.meetingId === id), [id])
+  const [localActionItems] = useStore(() => getData(KEYS.actionItems, []).filter((a) => a.meetingId === id), [id])
   const [documents] = useStore(() => getData(KEYS.documents, []).filter((d) => d.meetingId === id), [id])
 
   const [tab, setTab] = useState('meeting')
@@ -88,6 +88,12 @@ const MeetingDetails = () => {
   const creator = users.find((u) => u.id === meeting?.createdBy)
   const responsible = users.find((u) => u.id === meeting?.responsibleId)
   const userById = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users])
+  const canManageMeeting = !meeting?.workspaceShared ||
+    meeting.sharedOwnerId === user?.id ||
+    user?.role === 'Admin'
+  const actionItems = meeting?.workspaceShared && !canManageMeeting
+    ? meeting.sharedActionItems || []
+    : localActionItems
 
   if (loading) return <LoadingSkeleton rows={7} />
   if (!meeting) {
@@ -116,7 +122,7 @@ const MeetingDetails = () => {
             <Badge tone="neutral">{meeting.ref}</Badge>
           </div>
         }
-        actions={
+        actions={canManageMeeting ? (
           <>
             <Select
               size="sm"
@@ -139,8 +145,23 @@ const MeetingDetails = () => {
               Delete
             </Button>
           </>
-        }
+        ) : null}
       />
+
+      {meeting.status === 'Rescheduled' && (
+        <div role="status" className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <Repeat size={17} className="mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold text-amber-900">Meeting rescheduled</p>
+            <p className="mt-0.5 text-sm text-amber-900">
+              New date and time: {formatDate(meeting.date)} at {formatTime(meeting.startTime) || 'Time not set'}
+            </p>
+            {meeting.rescheduleReason && (
+              <p className="mt-1 text-sm text-amber-800">Reason: {meeting.rescheduleReason}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <Tabs
         value={tab}
@@ -148,9 +169,15 @@ const MeetingDetails = () => {
         tabs={[
           { value: 'meeting', label: 'Meeting', icon: ListChecks },
           { value: 'actions', label: 'Action items', icon: CheckSquare, count: actionItems.length },
-          { value: 'documents', label: 'Documents', icon: FileText, count: documents.length },
+          ...(canManageMeeting ? [{ value: 'documents', label: 'Documents', icon: FileText, count: documents.length }] : []),
         ]}
       />
+
+      {!canManageMeeting && (
+        <p className="rounded-lg border border-line bg-white px-4 py-3 text-sm text-muted">
+          You are a participant. Meeting details are read-only; only the organizer can make changes.
+        </p>
+      )}
 
       {tab === 'meeting' && (
         <div className="grid gap-4 lg:grid-cols-3">
@@ -191,11 +218,11 @@ const MeetingDetails = () => {
               <Field
                 icon={ListChecks}
                 label="Agenda"
-                action={
+                action={canManageMeeting ? (
                   <Button size="sm" variant="secondary" icon={Repeat} className="self-start" onClick={() => setRescheduleOpen(true)}>
                     Reschedule
                   </Button>
-                }
+                ) : null}
               >
                 {meeting.agenda || 'No agenda recorded.'}
                 <span className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
@@ -219,14 +246,21 @@ const MeetingDetails = () => {
           <Card>
             <CardHeader
               title={`Participants (${participants.length})`}
-              action={
+              action={canManageMeeting ? (
                 <Button size="sm" variant="soft" icon={UserPlus} onClick={() => setParticipantOpen(true)}>
                   Add
                 </Button>
-              }
+              ) : null}
             />
             {participants.length === 0 ? (
-              <EmptyState compact icon={UserPlus} title="No participants" description="Add the people who should attend." actionLabel="Add participant" onAction={() => setParticipantOpen(true)} />
+              <EmptyState
+                compact
+                icon={UserPlus}
+                title="No participants"
+                description="Add the people who should attend."
+                actionLabel={canManageMeeting ? 'Add participant' : undefined}
+                onAction={canManageMeeting ? () => setParticipantOpen(true) : undefined}
+              />
             ) : (
               <ul className="divide-y divide-line">
                 {participants.map((p) => {
@@ -238,17 +272,19 @@ const MeetingDetails = () => {
                         <p className="truncate text-[13px] font-medium text-ink">{person?.name || 'Removed user'}</p>
                         <p className="truncate text-xs text-muted">{p.type}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          removeParticipant(meeting.id, p.userId)
-                          toast('Participant removed.', 'info')
-                        }}
-                        aria-label={`Remove ${person?.name || 'participant'}`}
-                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-danger"
-                      >
-                        <X size={14} />
-                      </button>
+                      {canManageMeeting && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            removeParticipant(meeting.id, p.userId)
+                            toast('Participant removed.', 'info')
+                          }}
+                          aria-label={`Remove ${person?.name || 'participant'}`}
+                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-danger"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
                     </li>
                   )
                 })}
@@ -263,14 +299,21 @@ const MeetingDetails = () => {
           <CardHeader
             title="Action items"
             description="Follow-ups captured from this meeting"
-            action={
+            action={canManageMeeting ? (
               <Button size="sm" icon={Plus} onClick={() => setActionOpen(true)}>
                 Create action item
               </Button>
-            }
+            ) : null}
           />
           {actionItems.length === 0 ? (
-            <EmptyState icon={CheckSquare} title="No action items yet" description="Capture what the team agreed to do next." actionLabel="Create action item" actionIcon={Plus} onAction={() => setActionOpen(true)} />
+            <EmptyState
+              icon={CheckSquare}
+              title="No action items yet"
+              description="Capture what the team agreed to do next."
+              actionLabel={canManageMeeting ? 'Create action item' : undefined}
+              actionIcon={canManageMeeting ? Plus : undefined}
+              onAction={canManageMeeting ? () => setActionOpen(true) : undefined}
+            />
           ) : (
             <ul className="divide-y divide-line">
               {actionItems.map((a) => (
@@ -282,14 +325,16 @@ const MeetingDetails = () => {
                   </div>
                   <PriorityBadge priority={a.priority} />
                   <StatusBadge status={a.status} kind="generic" />
-                  <button
-                    type="button"
-                    onClick={() => setPendingAction(a)}
-                    aria-label={`Delete ${a.title}`}
-                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-danger"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {canManageMeeting && (
+                    <button
+                      type="button"
+                      onClick={() => setPendingAction(a)}
+                      aria-label={`Delete ${a.title}`}
+                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-danger"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -339,10 +384,14 @@ const MeetingDetails = () => {
         open={rescheduleOpen}
         meeting={meeting}
         onClose={() => setRescheduleOpen(false)}
-        onSubmit={(values) => {
-          rescheduleMeeting(meeting.id, values, user?.name)
-          toast('Meeting rescheduled successfully.')
-          setRescheduleOpen(false)
+        onSubmit={async (values) => {
+          try {
+            await rescheduleMeeting(meeting.id, values, user?.name)
+            toast('Meeting rescheduled successfully.')
+            setRescheduleOpen(false)
+          } catch (error) {
+            toast(error.message || 'The meeting could not be rescheduled.', 'warning')
+          }
         }}
       />
 

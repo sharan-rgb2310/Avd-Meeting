@@ -98,21 +98,30 @@ const ForgotPasswordModal = ({ open, onClose }) => {
     }, 200)
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (!email.trim()) return setError('Enter your email address.')
     if (!isEmail(email)) return setError('Enter a valid email address.')
     setError('')
     setBusy(true)
-    requestPasswordReset(email)
-    setBusy(false)
-    setSent(true)
+    try {
+      const result = await requestPasswordReset(email)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setSent(true)
+    } catch (requestError) {
+      setError(requestError.message || 'Password reset email could not be sent. Please try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
     <Modal
       open={open}
       onClose={close}
-      title={sent ? 'Reset link simulated' : 'Reset your password'}
+      title={sent ? 'Check your email' : 'Reset your password'}
       description={sent ? undefined : 'Enter the email address on your AV DYNAMICS account.'}
       size="sm"
       footer={
@@ -134,8 +143,9 @@ const ForgotPasswordModal = ({ open, onClose }) => {
         <div className="flex items-start gap-3 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3.5">
           <MailCheck size={18} className="mt-0.5 shrink-0 text-brand" aria-hidden="true" />
           <p className="text-[13px] leading-relaxed text-brand-700">
-            This frontend demo runs without a mail server, so no email was sent. In a connected workspace a reset link
-            would go to <span className="font-medium">{email}</span>.
+            {supabase
+              ? <>If an account exists for <span className="font-medium">{email}</span>, Supabase will email a password reset link.</>
+              : <>Local mode runs without a mail server, so no email was sent. In a connected workspace a reset link would go to <span className="font-medium">{email}</span>.</>}
           </p>
         </div>
       ) : (
@@ -149,7 +159,8 @@ const ForgotPasswordModal = ({ open, onClose }) => {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email address"
           />
-          <p className="mt-3 hint">For this frontend demo, password reset is simulated.</p>
+          {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
+          {!supabase && <p className="mt-3 hint">In local mode, password reset is simulated.</p>}
         </>
       )}
     </Modal>
@@ -281,7 +292,7 @@ const Login = () => {
             </p>
 
             <p className="mt-8 text-center text-[11px] text-muted">
-              AV DYNAMICS Meeting Management · {supabase ? 'Data syncs to your account.' : 'Demo data stays in this browser.'}
+              AV DYNAMICS Meeting Management · {supabase ? 'Data syncs to your account.' : 'Local workspace data stays in this browser.'}
             </p>
           </div>
         </div>

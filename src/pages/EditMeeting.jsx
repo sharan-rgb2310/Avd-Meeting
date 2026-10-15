@@ -45,6 +45,15 @@ const EditMeeting = () => {
   if (!meeting || !initial) {
     return <ErrorState title="Meeting not found" description="This meeting may have been deleted." onRetry={() => navigate('/meetings')} />
   }
+  if (meeting.workspaceShared && meeting.sharedOwnerId !== user?.id && user?.role !== 'Admin') {
+    return (
+      <ErrorState
+        title="This meeting is read-only"
+        description="Only the meeting organizer can edit its details."
+        onRetry={() => navigate(`/meetings/${meeting.id}`)}
+      />
+    )
+  }
 
   const organizerId = meeting.participants?.find((p) => p.type === 'Organizer')?.userId || meeting.createdBy
 
@@ -70,11 +79,15 @@ const EditMeeting = () => {
         open={rescheduleOpen}
         meeting={meeting}
         onClose={() => setRescheduleOpen(false)}
-        onSubmit={(values) => {
-          rescheduleMeeting(meeting.id, values, user?.name)
-          toast('Meeting rescheduled successfully.')
-          setRescheduleOpen(false)
-          navigate(`/meetings/${meeting.id}`)
+        onSubmit={async (values) => {
+          try {
+            await rescheduleMeeting(meeting.id, values, user?.name)
+            toast('Meeting rescheduled successfully.')
+            setRescheduleOpen(false)
+            navigate(`/meetings/${meeting.id}`)
+          } catch (error) {
+            toast(error.message || 'The meeting could not be rescheduled.', 'warning')
+          }
         }}
       />
     </div>

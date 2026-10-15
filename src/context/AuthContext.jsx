@@ -2,6 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import * as authService from '../services/authService'
 import { KEYS, getData } from '../services/storageService'
 import { loadWorkspaceForUser } from '../services/supabaseWorkspaceService'
+import {
+  subscribeToSharedWorkspace,
+  syncSharedMeetings,
+  syncUserDirectory,
+} from '../services/supabaseSharedWorkspaceService'
 import { supabase } from '../utils/supabase'
 import useStore from '../hooks/useStore'
 
@@ -22,6 +27,12 @@ export const AuthProvider = ({ children }) => {
     setReady(false)
     try {
       await loadWorkspaceForUser(nextSession.user)
+      if (supabase) {
+        await Promise.all([
+          syncUserDirectory(),
+          syncSharedMeetings(nextSession.user),
+        ])
+      }
       setAuthSession(nextSession)
       return true
     } catch (error) {
@@ -44,7 +55,11 @@ export const AuthProvider = ({ children }) => {
     let active = true
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (event === 'SIGNED_OUT') {
+        authService.clearPasswordRecoverySession()
         if (active) applySession(null)
+      } else if (event === 'PASSWORD_RECOVERY') {
+        authService.markPasswordRecoverySession()
+        Promise.resolve().then(() => active && applySession(nextSession))
       } else if (event === 'SIGNED_IN') {
         Promise.resolve().then(() => active && applySession(nextSession))
       }
@@ -65,6 +80,11 @@ export const AuthProvider = ({ children }) => {
       subscription.unsubscribe()
     }
   }, [applySession])
+
+  useEffect(() => {
+    if (!supabase || !authSession?.user?.id) return undefined
+    return subscribeToSharedWorkspace(authSession.user)
+  }, [authSession?.user?.id])
 
   const refresh = useCallback(() => {
     if (!supabase) setAuthSession(authService.getCurrentSession())

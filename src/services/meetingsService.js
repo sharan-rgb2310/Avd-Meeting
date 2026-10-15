@@ -2,6 +2,8 @@ import { KEYS, getData, addItem, updateItem, deleteItem, findItem, setData } fro
 import { uid } from '../utils/format'
 import { logActivity } from './dashboardService'
 import { sendMeetingInvitations } from './emailNotificationService'
+import { persistWorkspaceChange } from './supabaseWorkspaceService'
+import { formatDate, formatTime } from '../utils/format'
 
 export const listMeetings = () => getData(KEYS.meetings, [])
 export const getMeeting = (id) => findItem(KEYS.meetings, id)
@@ -85,14 +87,22 @@ export const removeMeeting = (id) => {
   return id
 }
 
-export const rescheduleMeeting = (id, { date, startTime, reason }, actorName = 'Someone') => {
+export const rescheduleMeeting = async (id, { date, startTime, reason }, actorName = 'Someone') => {
   const updated = updateMeeting(id, {
     date,
     startTime,
     status: 'Rescheduled',
     rescheduleReason: reason,
   })
-  if (updated) logActivity(`${actorName} rescheduled ${updated.title}`, 'meeting', id, updated.companyId)
+  if (updated) {
+    await persistWorkspaceChange(KEYS.meetings, getData(KEYS.meetings, []))
+    logActivity(
+      `${actorName} rescheduled ${updated.title} to ${formatDate(updated.date)} at ${formatTime(updated.startTime)}`,
+      'meeting',
+      id,
+      updated.companyId
+    )
+  }
   return updated
 }
 

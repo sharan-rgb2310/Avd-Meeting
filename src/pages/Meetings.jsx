@@ -63,6 +63,7 @@ const Meetings = () => {
   const [sort, setSort] = useState({ key: 'date', dir: 'asc' })
   const [selected, setSelected] = useState([])
   const [pendingDelete, setPendingDelete] = useState(null)
+  const [pendingBulkDelete, setPendingBulkDelete] = useState(false)
   const [pendingCancel, setPendingCancel] = useState(null)
   const [rescheduling, setRescheduling] = useState(null)
 
@@ -167,19 +168,23 @@ const Meetings = () => {
               <DropdownItem icon={Eye} onClick={() => { close(); navigate(`/meetings/${row.id}`) }}>
                 View meeting
               </DropdownItem>
-              <DropdownItem icon={Edit} onClick={() => { close(); navigate(`/meetings/${row.id}/edit`) }}>
-                Edit meeting
-              </DropdownItem>
-              <DropdownItem icon={Repeat} onClick={() => { close(); setRescheduling(row) }}>
-                Reschedule
-              </DropdownItem>
-              <DropdownItem icon={XCircle} onClick={() => { close(); setPendingCancel(row) }}>
-                Cancel meeting
-              </DropdownItem>
-              <DropdownDivider />
-              <DropdownItem icon={Trash2} tone="danger" onClick={() => { close(); setPendingDelete(row) }}>
-                Delete meeting
-              </DropdownItem>
+              {(!row.workspaceShared || row.sharedOwnerId === user?.id || user?.role === 'Admin') && (
+                <>
+                  <DropdownItem icon={Edit} onClick={() => { close(); navigate(`/meetings/${row.id}/edit`) }}>
+                    Edit meeting
+                  </DropdownItem>
+                  <DropdownItem icon={Repeat} onClick={() => { close(); setRescheduling(row) }}>
+                    Reschedule
+                  </DropdownItem>
+                  <DropdownItem icon={XCircle} onClick={() => { close(); setPendingCancel(row) }}>
+                    Cancel meeting
+                  </DropdownItem>
+                  <DropdownDivider />
+                  <DropdownItem icon={Trash2} tone="danger" onClick={() => { close(); setPendingDelete(row) }}>
+                    Delete meeting
+                  </DropdownItem>
+                </>
+              )}
             </div>
           )}
         </Dropdown>
@@ -240,11 +245,7 @@ const Meetings = () => {
             <Button
               size="sm"
               variant="dangerSoft"
-              onClick={() => {
-                selected.forEach((id) => removeMeeting(id))
-                toast('Meetings deleted successfully.')
-                setSelected([])
-              }}
+              onClick={() => setPendingBulkDelete(true)}
             >
               Delete
             </Button>
@@ -260,7 +261,10 @@ const Meetings = () => {
           loading={loading}
           selectable
           selected={selected}
-          onSelectChange={setSelected}
+          onSelectChange={(ids) => setSelected(ids.filter((id) => {
+            const meeting = meetings.find((entry) => entry.id === id)
+            return !meeting?.workspaceShared || meeting.sharedOwnerId === user?.id || user?.role === 'Admin'
+          }))}
           sort={sort}
           onSortChange={setSort}
           onRowClick={(row) => navigate(`/meetings/${row.id}`)}
@@ -282,10 +286,28 @@ const Meetings = () => {
         open={Boolean(rescheduling)}
         meeting={rescheduling}
         onClose={() => setRescheduling(null)}
-        onSubmit={(values) => {
-          rescheduleMeeting(rescheduling.id, values, user?.name)
-          toast('Meeting rescheduled successfully.')
-          setRescheduling(null)
+        onSubmit={async (values) => {
+          try {
+            await rescheduleMeeting(rescheduling.id, values, user?.name)
+            toast('Meeting rescheduled successfully.')
+            setRescheduling(null)
+          } catch (error) {
+            toast(error.message || 'The meeting could not be rescheduled.', 'warning')
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingBulkDelete}
+        onClose={() => setPendingBulkDelete(false)}
+        title={`Delete ${selected.length} selected meeting${selected.length === 1 ? '' : 's'}?`}
+        description="This removes the selected meetings and their documents. Action items stay in the workspace without a meeting link."
+        confirmLabel={`Delete ${selected.length} meeting${selected.length === 1 ? '' : 's'}`}
+        onConfirm={() => {
+          selected.forEach((id) => removeMeeting(id))
+          toast('Selected meetings deleted successfully.')
+          setSelected([])
+          setPendingBulkDelete(false)
         }}
       />
 

@@ -2,11 +2,11 @@ import { useId } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cx } from '../../utils/format'
 
-const Select = ({ label, error, hint, options = [], placeholder, className, id, size = 'md', ...props }) => {
+const Select = ({ label, error, hint, options = [], placeholder, className, containerClassName, id, size = 'md', ...props }) => {
   const generated = useId()
   const fieldId = id || generated
   return (
-    <div>
+    <div className={containerClassName}>
       {label && (
         <label htmlFor={fieldId} className="field-label">
           {label}

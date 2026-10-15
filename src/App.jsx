@@ -2,17 +2,17 @@ import { useEffect, useState } from 'react'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import AppRoutes from './routes/AppRoutes'
-import { configureRemotePersistence, initializeSeedData } from './services/storageService'
+import { configureRemotePersistence } from './services/storageService'
 import { persistWorkspaceChange } from './services/supabaseWorkspaceService'
 import { supabase } from './utils/supabase'
-import seed from './data/seedData'
+import { removeLegacyDemoData } from './data/legacyDemoData'
 
 const App = () => {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
+    removeLegacyDemoData()
     configureRemotePersistence(persistWorkspaceChange)
-    if (!supabase && !import.meta.env.PROD) initializeSeedData(seed)
     setReady(true)
   }, [])
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Download, Edit, Eye, FileText, MoreHorizontal, Trash2, Upload } from 'lucide-react'
 import PageHeader from '../components/common/PageHeader'
 import FilterBar from '../components/common/FilterBar'
@@ -15,7 +15,7 @@ import Pagination from '../components/ui/Pagination'
 import Dropdown, { DropdownDivider, DropdownItem } from '../components/ui/Dropdown'
 import DocumentUploadModal from '../components/documents/DocumentUploadModal'
 import { KEYS, getData } from '../services/storageService'
-import { createDocument, isPreviewable, removeDocument, renameDocument } from '../services/documentsService'
+import { createDocument, getDocumentFile, isPreviewable, removeDocument, renameDocument } from '../services/documentsService'
 import useStore from '../hooks/useStore'
 import useLoading from '../hooks/useLoading'
 import usePagination from '../hooks/usePagination'
@@ -45,6 +45,8 @@ const Documents = () => {
   const [renaming, setRenaming] = useState(null)
   const [renameValue, setRenameValue] = useState('')
   const [previewing, setPreviewing] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [previewError, setPreviewError] = useState('')
   const [pendingDelete, setPendingDelete] = useState(null)
 
   const meetingTitle = (id) => meetings.find((m) => m.id === id)?.title || '—'
@@ -62,6 +64,32 @@ const Documents = () => {
 
   const { page, setPage, totalPages, slice, pageSize, count } = usePagination(rows, 8)
 
+  useEffect(() => {
+    let active = true
+    let objectUrl = ''
+    setPreviewUrl(previewing?.dataUrl || '')
+    setPreviewError('')
+    if (previewing?.fileKey && !previewing.dataUrl) {
+      getDocumentFile(previewing.fileKey)
+        .then((file) => {
+          if (!active) return
+          if (!file) {
+            setPreviewError('The file is not available in this browser. Upload it again to preview or download it.')
+            return
+          }
+          objectUrl = URL.createObjectURL(file)
+          setPreviewUrl(objectUrl)
+        })
+        .catch((error) => {
+          if (active) setPreviewError(error.message || 'The file could not be opened.')
+        })
+    }
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [previewing])
+
   const hasFilters = Boolean(search || meetingId || companyId || type)
   const reset = () => {
     setSearch('')
@@ -70,16 +98,47 @@ const Documents = () => {
     setType('')
   }
 
-  const download = (doc) => {
-    if (!doc.dataUrl) {
-      toast('This document is a record only, so there is no file to download.', 'warning')
-      return
+  const download = async (doc) => {
+    try {
+      const file = doc.fileKey ? await getDocumentFile(doc.fileKey) : null
+      const blob = file || (doc.dataUrl ? await (await fetch(doc.dataUrl)).blob() : null)
+      if (!blob) {
+        toast('This document has no stored file to download. Upload the file again from this browser.', 'warning')
+        return
+      }
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = doc.name
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast('Download started.', 'info')
+    } catch (error) {
+      toast(error.message || 'The file could not be downloaded.', 'warning')
     }
-    const a = document.createElement('a')
-    a.href = doc.dataUrl
-    a.download = doc.name
-    a.click()
-    toast('Download started.', 'info')
+  }
+
+  const uploadDocument = async (values) => {
+    try {
+      await createDocument({ ...values, uploadedBy: user?.id }, user?.name)
+      toast('Document uploaded.')
+      setUploadOpen(false)
+    } catch (error) {
+      toast(error.message || 'The document could not be uploaded.', 'warning')
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    try {
+      await removeDocument(pendingDelete.id)
+      toast('Document deleted.')
+      setPendingDelete(null)
+    } catch (error) {
+      toast(error.message || 'The document could not be deleted.', 'warning')
+    }
   }
 
   const columns = [
@@ -196,11 +255,7 @@ const Documents = () => {
         onClose={() => setUploadOpen(false)}
         meetings={meetings}
         companies={companies}
-        onSubmit={(values) => {
-          createDocument({ ...values, uploadedBy: user?.id }, user?.name)
-          toast('Document uploaded.')
-          setUploadOpen(false)
-        }}
+        onSubmit={uploadDocument}
       />
 
       <Modal
@@ -230,20 +285,22 @@ const Documents = () => {
       </Modal>
 
       <Modal open={Boolean(previewing)} onClose={() => setPreviewing(null)} title={previewing?.name} size="lg">
-        {previewing && isPreviewable(previewing) ? (
+        {previewing && isPreviewable(previewing) && previewUrl ? (
           previewing.type === 'MP4' ? (
-            <video src={previewing.dataUrl} controls className="w-full rounded-xl" />
+            <video src={previewUrl} controls className="w-full rounded-xl" />
           ) : previewing.type === 'PDF' ? (
-            <iframe src={previewing.dataUrl} title={previewing.name} className="h-[60vh] w-full rounded-xl border border-line" />
+            <iframe src={previewUrl} title={previewing.name} className="h-[60vh] w-full rounded-xl border border-line" />
           ) : (
-            <img src={previewing.dataUrl} alt={previewing.name} className="mx-auto max-h-[60vh] rounded-xl" />
+            <img src={previewUrl} alt={previewing.name} className="mx-auto max-h-[60vh] rounded-xl" />
           )
         ) : (
           <div className="rounded-xl border border-line bg-slate-50/70 px-5 py-10 text-center">
             <FileText size={24} className="mx-auto mb-3 text-muted" aria-hidden="true" />
-            <p className="text-[13px] font-medium text-ink">Preview is not available for this document</p>
+            <p className="text-[13px] font-medium text-ink">
+              {previewError ? 'File could not be opened' : isPreviewable(previewing) ? 'Loading file…' : 'Preview is not available for this document'}
+            </p>
             <p className="mx-auto mt-1 max-w-sm text-xs text-muted">
-              Sample records store details only. Upload a PDF, image or video from this browser to preview it here.
+              {previewError || 'This document is stored in this browser. Upload a PDF, image or video to preview it here.'}
             </p>
             <dl className="mx-auto mt-5 grid max-w-xs grid-cols-2 gap-y-2 text-left text-xs">
               <dt className="text-muted">Type</dt>
@@ -264,11 +321,7 @@ const Documents = () => {
         onClose={() => setPendingDelete(null)}
         title={`Delete ${pendingDelete?.name}?`}
         description="The document record is removed from its meeting and company."
-        onConfirm={() => {
-          removeDocument(pendingDelete.id)
-          toast('Document deleted.')
-          setPendingDelete(null)
-        }}
+        onConfirm={confirmDelete}
       />
     </div>
   )

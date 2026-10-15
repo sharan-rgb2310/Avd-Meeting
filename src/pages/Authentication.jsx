@@ -12,7 +12,6 @@ import useLoading from '../hooks/useLoading'
 import { useToast } from '../context/ToastContext'
 import { getSettings, saveSection } from '../services/notificationsService'
 import { KEYS, getData } from '../services/storageService'
-import { ROLES } from '../data/seedData'
 
 const METHODS = [
   { key: 'email', label: 'Email and password', description: 'Classic credentials with an optional one-time code.', icon: Mail },
@@ -193,12 +192,10 @@ const Authentication = () => {
               />
             </Row>
             <Row>
-              <Select
-                label="Default role"
-                options={!auth.defaultRole || ROLES.includes(auth.defaultRole) ? ROLES : [auth.defaultRole, ...ROLES]}
-                value={auth.defaultRole}
-                onChange={(e) => save({ defaultRole: e.target.value })}
-              />
+              <p className="text-[13px] leading-relaxed text-muted">
+                Each person chooses a role when creating an account. Roles are profile labels and do not grant extra
+                permissions.
+              </p>
             </Row>
             <Row last>
               <Select
@@ -217,13 +214,13 @@ const Authentication = () => {
                 <LockKeyhole size={16} />
               </span>
               <div>
-                <h3 className="text-[13px] font-semibold text-ink">Frontend demo workspace</h3>
+                <h3 className="text-[13px] font-semibold text-ink">Workspace authentication settings</h3>
                 <p className="mt-1 text-xs leading-relaxed text-muted">
-                  AV DYNAMICS runs entirely in the browser for this demo. These settings persist to LocalStorage and are
-                  applied by the app shell — no identity provider is contacted.
+                  These preferences are saved with your workspace. Supabase Auth handles connected accounts and
+                  invitations.
                 </p>
                 <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted">
-                  <UserPlus size={13} /> New members default to {auth.defaultRole}.
+                  <UserPlus size={13} /> New users select their role during signup.
                 </p>
               </div>
             </div>

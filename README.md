@@ -1,6 +1,6 @@
 # AV DYNAMICS · Meeting Management
 
-An enterprise meeting management, CRM and productivity workspace built with React and Vite. Without Supabase configuration, the app runs in local demo mode. With Supabase configured, accounts use Supabase Auth and workspace records sync to a private per-account database store.
+An enterprise meeting management, CRM and productivity workspace built with React and Vite. Without Supabase configuration, accounts and records stay in this browser. With Supabase configured, accounts use Supabase Auth and workspace records sync to a private per-account database store.
 
 ---
 
@@ -10,8 +10,8 @@ An enterprise meeting management, CRM and productivity workspace built with Reac
 - Premium two-column login page with the AV DYNAMICS brand panel
 - Inline email/password validation, password visibility toggle, loading and disabled button states
 - Persistent Supabase Auth sessions, protected and public-only routes, logout
-- LocalStorage/sessionStorage demo authentication when Supabase is not configured
-- Simulated forgot-password flow
+- LocalStorage/sessionStorage authentication when Supabase is not configured
+- Supabase email-based password recovery with a dedicated reset page
 
 **Dashboard**
 - Three highlighted meeting cards — Today's (blue), Tomorrow's (green) and Upcoming (amber, after tomorrow) — computed live from the meetings store; each opens the Meetings list filtered to the same set
@@ -34,8 +34,9 @@ An enterprise meeting management, CRM and productivity workspace built with Reac
 - Priorities (Low / Medium / High / Critical), assignment, due dates, meeting and company links, full CRUD
 
 **Documents**
-- Upload with real file reading (stored as a data URL under 4 MB), plus metadata-only for larger files
-- Search, meeting / company / type filters, preview for images and PDFs, download, rename, delete
+- Upload files into browser IndexedDB alongside document metadata, so files over 4 MB remain downloadable instead of becoming metadata-only records
+- Search, meeting / company / type filters, preview for images, PDFs and videos, Blob-based download, rename, delete
+- File contents stay in the browser that uploaded them; shared cloud records contain document metadata only
 
 **Teams & Users**
 - Team CRUD, department assignment, team lead, members, team details with meetings and action items
@@ -82,7 +83,7 @@ npm run build    # production build into dist/
 npm run preview  # serve the production build
 ```
 
-The Supabase client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env`. Use real project values; the placeholder values in `.env.example` do not connect. For Vercel, add both variables under Project Settings → Environment Variables for each deployment environment, then redeploy. In Supabase Authentication → URL Configuration, set the deployed app as the Site URL and add its origin to Redirect URLs. Email confirmation is disabled so signup does not send rate-limited confirmation emails; Supabase still validates addresses and prevents duplicate accounts.
+The Supabase client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env`. Use real project values; the placeholder values in `.env.example` do not connect. For Vercel, add both variables under Project Settings → Environment Variables for each deployment environment, then redeploy. In Supabase Authentication → URL Configuration, set the deployed app as the Site URL and add both its origin and `/reset-password` URL to Redirect URLs. Email confirmation is disabled so signup does not send rate-limited confirmation emails; Supabase still validates addresses and prevents duplicate accounts.
 
 Optional Supabase agent instructions:
 
@@ -92,7 +93,19 @@ npx skills add supabase/agent-skills
 
 ## Supabase database
 
-The app stores credentials in Supabase Auth and saves its user, company, team, meeting, action-item, document, notification, settings, and activity collections in `public.workspace_records`. Every record is scoped to `auth.uid()` by RLS; passwords are never copied into workspace records. Existing browser records are imported for the first account on that browser, with seeded demo rows removed. Legacy normalized tables remain locked to browser roles.
+The app stores credentials in Supabase Auth and saves private workspace collections in `public.workspace_records`, scoped to `auth.uid()` by RLS; passwords are never copied into workspace records. The `user_directory` view exposes name, email, department, title, role, status, and account creation date to signed-in users, but not phone numbers. New Auth accounts are copied into `public.profiles` by a database trigger. Meetings are shared separately in `public.shared_meetings`; RLS allows the organizer and selected participants to read complete meeting details and linked action items, while only the organizer can change or delete them. Realtime refreshes the Users and Meetings pages when those records change.
+
+Signup lets users enter a role as text. Entering `Admin` (case-insensitive) claims an Admin role only while fewer than three Admin accounts exist; the database serializes role assignment and prevents a fourth Admin, including concurrent signups. Because this is public signup, anyone who reaches the form while a slot is available can claim one. Existing non-admin accounts cannot promote themselves to Admin in Profile settings; an existing Admin can assign Admin through the Users page. The server verifies the caller's current `profiles.role`, and the database prevents removal or deactivation of the last active Admin. Admin privileges apply consistently to account management, companies, meetings, and meeting action items. Role values are limited to 80 characters and can be edited in Profile settings.
+
+```bash
+supabase migration list --linked
+supabase functions deploy manage-workspace-user
+supabase functions deploy signup-role-options
+```
+
+The linked Supabase project has been updated with the nullable free-form role schema, the three-Admin database guard, Admin RLS policies, and the role-management and signup-availability Edge Functions. Its migration history still has local/remote gaps; review the pending migration list before applying changes and do not run a broad `db push` without reconciling those gaps.
+
+RLS remains enabled on exposed tables. Existing ownership and participant policies are retained, with additional Admin-only policies granting active Admins access to company, meeting, and meeting-action-item records plus shared meetings. Personal documents, settings, notifications, and unrelated workspace collections remain owner-scoped. Do not disable RLS to implement administrator access. Admin role changes are validated by the authenticated management function and enforced by a database trigger; public signups may claim one of the first three Admin roles, and the database prevents a fourth. Existing non-admins cannot promote themselves through Profile settings. All signed-in active users can view the directory, while profile role changes are performed server-side. Demo fixture IDs are cleaned selectively; registered Auth accounts and unrelated workspace data are not removed.
 
 ## Gmail meeting invitations
 
@@ -109,14 +122,8 @@ supabase functions deploy send-meeting-invitations
 
 The Google OAuth client needs the Gmail API enabled and the `https://www.googleapis.com/auth/gmail.send` scope. The refresh token and client secret must remain server-side; never add them to `.env` variables prefixed with `VITE_`. The function source is in `supabase/functions/send-meeting-invitations/index.ts`.
 
-## Demo credentials
-
-```
-Email:    admin@avdynamics.com
-Password: Admin@123
-```
-
-The login page also offers a **Use Demo Account** button that fills the form for you. Other seeded accounts (sarah@, john@, maria@, david@, jennifer@, michael@ — all `Demo@123`) can be used to see non-admin data.
+## Accounts and roles
+There are no seeded accounts or demo credentials. Create an account from the signup page and enter a role; an Admin role can be claimed while fewer than three Admin accounts exist. In a Supabase-connected workspace, an administrator can send real account invitations and manage workspace roles. All signed-in users can view the shared directory and edit or delete their own account.
 
 ---
 
@@ -134,7 +141,8 @@ services/*        ← all business logic and the only place that knows about sto
 
 - **No component touches `window.localStorage`.** Everything goes through `storageService`.
 - Every write broadcasts a `avdynamics:store` CustomEvent. The `useStore` hook subscribes to it, so any screen reading a collection re-renders when another screen mutates it.
-- Local demo mode seeds fixtures once. Configured Supabase mode loads the signed-in user's cloud records and syncs future changes; the browser cache is refreshed from the account on sign-in.
+- No fixture records are seeded. Known legacy fixture IDs are removed from browser caches and the Supabase workspace-record collections without deleting registered Auth accounts or unrelated records.
+- Configured Supabase mode loads the signed-in user's cloud records and syncs future changes; the browser cache is refreshed from the account on sign-in.
 - Context providers: `ToastProvider` (global toasts) and `AuthProvider` (session, current user, login/logout).
 
 ### Project structure
@@ -158,7 +166,7 @@ src/
                  usersService, notificationsService
   hooks/         useStore, useLoading, useDebounce, usePagination
   context/       AuthContext, ToastContext
-  data/          seedData.js
+  data/          seedData.js, legacyDemoData.js
   utils/         format.js, validators.js
   routes/        AppRoutes.jsx, ProtectedRoute.jsx
 ```
@@ -179,7 +187,7 @@ src/
 | `avdynamics_teams` | `[{ id, name, department, leadId, memberIds[], status, description, createdAt }]` |
 | `avdynamics_meetings` | `[{ id, ref, title, companyId, companyName, department, date, startTime, type, status, responsibleId, createdBy, agenda, notes, decisions, actionItemsText, remarks, participants[{ userId, type }], createdAt }] — `companyName` is only set when the company was typed in manually; older meetings may still carry `teamId`, `endTime`, `location`, `link`, `aiSummary`, `recordingUrl` (kept, no longer shown)` |
 | `avdynamics_action_items` | `[{ id, title, description, status, priority, dueDate, assigneeId, meetingId, companyId, createdAt }]` |
-| `avdynamics_documents` | `[{ id, name, type, size, meetingId, companyId, uploadedBy, dataUrl?, createdAt }]` |
+| `avdynamics_documents` | `[{ id, name, type, size, meetingId, companyId, uploadedBy, fileKey?, dataUrl?, createdAt }]` (`fileKey` points to a browser IndexedDB file; `dataUrl` is retained for older records) |
 | `avdynamics_notifications` | `[{ id, type, title, message, link, read, createdAt }]` |
 | `avdynamics_settings` | `{ notifications, automation, channels, templates[], auth, profile }` |
 | `avdynamics_activity` | `[{ id, type, message, entityId, actorId, createdAt }]` |
@@ -195,7 +203,7 @@ The services layer was written as a drop-in seam. To move to a real API:
 1. **Make the service functions async.** They already return plain values; change `getData(KEYS.meetings)` to `await http.get('/meetings')` inside `meetingsService` only. Component code changes from `const [meetings] = useStore(...)` to a data-fetching hook of your choice (React Query, SWR).
 2. **Replace `storageService`.** Swap `read`/`write` for `fetch` calls and keep the same exported names (`getData`, `setData`, `addItem`, `updateItem`, `deleteItem`, `findItem`). The `avdynamics:store` broadcast can be replaced with cache invalidation.
 3. **Replace `authService`.** `login` already returns `{ ok, session, user }` — point it at `POST /auth/login`, store the JWT where the session payload currently lives, and `AuthContext` keeps working unchanged.
-4. **Documents.** Replace the base64 data URL with an upload endpoint returning a signed URL; `documentsService.isPreviewable` and the preview modal already work off a URL.
+4. **Documents.** Replace browser IndexedDB file storage with an upload endpoint returning a signed URL; `documentsService.isPreviewable` and the preview modal already work off a URL.
 5. **Settings and notifications.** `getSettings` / `saveSection` map one-to-one onto `GET /settings` and `PATCH /settings/:section`.
 
 No page or component imports storage directly, so steps 1–5 are the entire migration surface.
