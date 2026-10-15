@@ -6,6 +6,15 @@ import { syncSharedWorkspaceRecords } from './supabaseWorkspaceService'
 const directorySyncs = new Map()
 const meetingSyncs = new Map()
 const teamSyncs = new Map()
+const uniqueBy = (rows, keyFor) => {
+  const seen = new Set()
+  return rows.filter((row) => {
+    const key = keyFor(row)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
 
 const stableJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
@@ -144,12 +153,15 @@ export const syncSharedMeetings = (authUser) => {
       }
     })
 
-    const rowsToSync = rowsToPublish.filter((row) => {
-      const existing = existingById.get(row.id)
-      return !existing ||
-        stableJson(existing.participant_ids || []) !== stableJson(row.participant_ids) ||
-        stableJson(existing.data || {}) !== stableJson(row.data)
-    })
+    const rowsToSync = uniqueBy(
+      rowsToPublish.filter((row) => {
+        const existing = existingById.get(row.id)
+        return !existing ||
+          stableJson(existing.participant_ids || []) !== stableJson(row.participant_ids) ||
+          stableJson(existing.data || {}) !== stableJson(row.data)
+      }),
+      (row) => row.id
+    )
     if (rowsToSync.length) {
       const { error } = await supabase
         .from('shared_meetings')

@@ -21,6 +21,15 @@ const pendingWrites = new Map()
 const pendingLoads = new Map()
 const recordSyncs = new Map()
 const sharedCollections = new Set(['companies', 'meetings', 'actionItems', 'documents', 'activity'])
+const uniqueBy = (rows, keyFor) => {
+  const seen = new Set()
+  return rows.filter((row) => {
+    const key = keyFor(row)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
 const stableJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
   if (value && typeof value === 'object') {
@@ -45,26 +54,29 @@ const valuesToRows = (ownerId, key, value, ownersByRecord = new Map()) => {
   if (!collection || value == null) return []
   if (key === KEYS.teams) return []
   const records = Array.isArray(value) ? value : [{ id: 'default', value }]
-  return records
-    .filter((record) => record && record.id != null)
-    .map((record) => {
-      const recordId = String(record.id)
-      const owners = ownersByRecord.get(recordId) || []
-      const declaredOwner = record.workspaceOwnerId || record.sharedOwnerId
-      const owner = declaredOwner && owners.includes(String(declaredOwner))
-        ? String(declaredOwner)
-        : owners.includes(ownerId)
-          ? ownerId
-          : owners.length === 1
-            ? owners[0]
-            : ownerId
-      return {
-        owner_id: owner,
-        collection,
-        record_id: recordId,
-        data: sanitizeRecord(key, Array.isArray(value) ? record : record.value),
-      }
-    })
+  return uniqueBy(
+    records
+      .filter((record) => record && record.id != null)
+      .map((record) => {
+        const recordId = String(record.id)
+        const owners = ownersByRecord.get(recordId) || []
+        const declaredOwner = record.workspaceOwnerId || record.sharedOwnerId
+        const owner = declaredOwner && owners.includes(String(declaredOwner))
+          ? String(declaredOwner)
+          : owners.includes(ownerId)
+            ? ownerId
+            : owners.length === 1
+              ? owners[0]
+              : ownerId
+        return {
+          owner_id: owner,
+          collection,
+          record_id: recordId,
+          data: sanitizeRecord(key, Array.isArray(value) ? record : record.value),
+        }
+      }),
+    (row) => `${row.owner_id}:${row.collection}:${row.record_id}`
+  )
 }
 
 const sharedMeetingRows = (ownerId, meetings, actionItems) =>
@@ -175,18 +187,21 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
       const { workspaceShared, sharedOwnerId, workspaceOwnerId, ...data } = team
       return data
     }
-    const rowsToSave = teams
-      .filter((team) => team?.id != null)
-      .filter((team) => {
-        const previous = previousById.get(String(team.id))
-        return !previous || stableJson(teamData(previous)) !== stableJson(teamData(team))
-      })
-      .map((team) => ({
-        id: String(team.id),
-        data: teamData(team),
-        created_at: team.createdAt || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }))
+    const rowsToSave = uniqueBy(
+      teams
+        .filter((team) => team?.id != null)
+        .filter((team) => {
+          const previous = previousById.get(String(team.id))
+          return !previous || stableJson(teamData(previous)) !== stableJson(teamData(team))
+        })
+        .map((team) => ({
+          id: String(team.id),
+          data: teamData(team),
+          created_at: team.createdAt || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      (row) => row.id
+    )
 
     if (rowsToSave.length) {
       const { error } = await supabase
@@ -212,7 +227,10 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
     const meetings = key === KEYS.meetings ? value : getData(KEYS.meetings, [])
     const actionItems = key === KEYS.actionItems ? value : getData(KEYS.actionItems, [])
     const isAdmin = getData(KEYS.users, []).some((user) => user.id === ownerId && user.role === 'Admin')
-    const sharedRows = sharedMeetingRows(ownerId, meetings, actionItems)
+    const sharedRows = uniqueBy(
+      sharedMeetingRows(ownerId, meetings, actionItems),
+      (row) => row.id
+    )
     if (sharedRows.length) {
       const { error } = await supabase
         .from('shared_meetings')
