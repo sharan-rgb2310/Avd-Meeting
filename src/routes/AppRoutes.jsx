@@ -1,7 +1,8 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from '../components/layout/AppLayout'
 import ProtectedRoute, { PublicOnlyRoute } from './ProtectedRoute'
+import { useAuth } from '../context/AuthContext'
 
 const Login = lazy(() => import('../pages/Login'))
 const SignUp = lazy(() => import('../pages/SignUp'))
@@ -23,9 +24,72 @@ const Authentication = lazy(() => import('../pages/Authentication'))
 const Profile = lazy(() => import('../pages/Profile'))
 const NotFound = lazy(() => import('../pages/NotFound'))
 
-const AppRoutes = () => (
-  <Suspense fallback={<div className="min-h-screen bg-canvas" aria-busy="true" />}>
-    <Routes>
+const routePreloaders = [
+  () => import('../pages/Companies'),
+  () => import('../pages/Meetings'),
+  () => import('../pages/ActionItems'),
+  () => import('../pages/Documents'),
+  () => import('../pages/Teams'),
+  () => import('../pages/Users'),
+  () => import('../pages/Notifications'),
+  () => import('../pages/Authentication'),
+  () => import('../pages/Profile'),
+  () => import('../pages/CompanyDetails'),
+  () => import('../pages/CreateMeeting'),
+  () => import('../pages/MeetingDetails'),
+  () => import('../pages/EditMeeting'),
+  () => import('../pages/TeamDetails'),
+  () => import('../pages/Dashboard'),
+]
+
+const publicRoutePreloaders = [
+  () => import('../pages/SignUp'),
+  () => import('../pages/ResetPassword'),
+]
+
+const AppRoutes = () => {
+  const { isAuthenticated, ready } = useAuth()
+
+  useEffect(() => {
+    if (!ready || navigator.connection?.saveData) return undefined
+    let cancelled = false
+    let index = 0
+    let idleCallbackId
+    let timeoutId
+    const preloaders = isAuthenticated ? routePreloaders : publicRoutePreloaders
+
+    const preloadNext = () => {
+      if (cancelled || index >= preloaders.length) return
+      preloaders[index]().then(() => {
+        index += 1
+        if (!cancelled) scheduleNext()
+      }).catch((error) => {
+        console.warn('Page preload failed:', error.message)
+        index += 1
+        if (!cancelled) scheduleNext()
+      })
+    }
+    const scheduleNext = () => {
+      if ('requestIdleCallback' in window) {
+        idleCallbackId = window.requestIdleCallback(preloadNext, { timeout: 1500 })
+      } else {
+        timeoutId = window.setTimeout(preloadNext, 500)
+      }
+    }
+
+    scheduleNext()
+    return () => {
+      cancelled = true
+      if (idleCallbackId !== undefined && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleCallbackId)
+      }
+      window.clearTimeout(timeoutId)
+    }
+  }, [isAuthenticated, ready])
+
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-canvas" aria-busy="true" />}>
+      <Routes>
       <Route
         path="/login"
         element={
@@ -64,8 +128,9 @@ const AppRoutes = () => (
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<NotFound />} />
-    </Routes>
-  </Suspense>
-)
+      </Routes>
+    </Suspense>
+  )
+}
 
 export default AppRoutes

@@ -1,9 +1,20 @@
 import { KEYS, getData, setData, withoutRemotePersistence } from './storageService'
 import { withoutLegacyDemoRecords } from '../data/legacyDemoData'
 import { supabase } from '../utils/supabase'
+import { syncSharedWorkspaceRecords } from './supabaseWorkspaceService'
 
 const directorySyncs = new Map()
 const meetingSyncs = new Map()
+const teamSyncs = new Map()
+const uniqueBy = (rows, keyFor) => {
+  const seen = new Set()
+  return rows.filter((row) => {
+    const key = keyFor(row)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
 
 const stableJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
@@ -75,6 +86,39 @@ export const syncUserDirectory = async () => {
   return syncing
 }
 
+export const syncSharedTeams = (authUser) => {
+  if (!supabase || !authUser?.id) return Promise.resolve([])
+  if (teamSyncs.has(authUser.id)) return teamSyncs.get(authUser.id)
+
+  const syncing = (async () => {
+    const { data, error } = await supabase
+      .from('shared_teams')
+      .select('id, data, created_at, updated_at')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+
+    const remoteTeams = (data || []).map((row) => ({
+      ...row.data,
+      id: row.id,
+      workspaceShared: true,
+    }))
+    const remoteIds = new Set(remoteTeams.map((team) => String(team.id)))
+    const localTeams = getData(KEYS.teams, []).filter(
+      (team) => !team.workspaceShared && !remoteIds.has(String(team.id))
+    )
+
+    withoutRemotePersistence(() => {
+      setData(KEYS.teams, [...remoteTeams, ...localTeams])
+    })
+    return remoteTeams
+  })().finally(() => {
+    teamSyncs.delete(authUser.id)
+  })
+
+  teamSyncs.set(authUser.id, syncing)
+  return syncing
+}
+
 export const syncSharedMeetings = (authUser) => {
   if (!supabase || !authUser?.id) return Promise.resolve([])
   if (meetingSyncs.has(authUser.id)) return meetingSyncs.get(authUser.id)
@@ -109,12 +153,15 @@ export const syncSharedMeetings = (authUser) => {
       }
     })
 
-    const rowsToSync = rowsToPublish.filter((row) => {
-      const existing = existingById.get(row.id)
-      return !existing ||
-        stableJson(existing.participant_ids || []) !== stableJson(row.participant_ids) ||
-        stableJson(existing.data || {}) !== stableJson(row.data)
-    })
+    const rowsToSync = uniqueBy(
+      rowsToPublish.filter((row) => {
+        const existing = existingById.get(row.id)
+        return !existing ||
+          stableJson(existing.participant_ids || []) !== stableJson(row.participant_ids) ||
+          stableJson(existing.data || {}) !== stableJson(row.data)
+      }),
+      (row) => row.id
+    )
     if (rowsToSync.length) {
       const { error } = await supabase
         .from('shared_meetings')
@@ -128,18 +175,28 @@ export const syncSharedMeetings = (authUser) => {
       .order('created_at', { ascending: false })
     if (error) throw error
 
-    const remoteMeetings = (data || []).map((row) => ({
-      ...row.data,
-      id: row.id,
-      participants: row.data.participants || [],
-      sharedActionItems: row.data.sharedActionItems || [],
-      workspaceShared: true,
-      sharedOwnerId: row.owner_id,
-    }))
+    const operationalMeetings = new Map(
+      getData(KEYS.meetings, [])
+        .filter((meeting) => meeting.workspaceOwnerId)
+        .map((meeting) => [String(meeting.id), meeting])
+    )
+    const remoteMeetings = (data || []).map((row) => {
+      const operationalMeeting = operationalMeetings.get(String(row.id))
+      return {
+        ...row.data,
+        ...operationalMeeting,
+        id: row.id,
+        participants: operationalMeeting?.participants || row.data.participants || [],
+        sharedActionItems: operationalMeeting?.sharedActionItems || row.data.sharedActionItems || [],
+        workspaceShared: true,
+        sharedOwnerId: row.owner_id,
+      }
+    })
     const remoteIds = new Set(remoteMeetings.map((meeting) => meeting.id))
     const previouslyRemoteIds = new Set(getData(KEYS.remoteMeetingIds, []))
     const localMeetings = getData(KEYS.meetings, []).filter((meeting) =>
-      !previouslyRemoteIds.has(meeting.id) && !remoteIds.has(meeting.id)
+      !remoteIds.has(String(meeting.id)) &&
+      (meeting.workspaceOwnerId || !previouslyRemoteIds.has(String(meeting.id)))
     )
 
     withoutRemotePersistence(() => {
@@ -169,6 +226,15 @@ export const subscribeToSharedWorkspace = (authUser) => {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_meetings' }, () => {
       refresh(() => syncSharedMeetings(authUser))
     })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_teams' }, () => {
+      refresh(() => syncSharedTeams(authUser))
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_records' }, (payload) => {
+      const collection = payload.new?.collection || payload.old?.collection
+      if (['companies', 'meetings', 'actionItems', 'documents', 'activity'].includes(collection)) {
+        refresh(() => syncSharedWorkspaceRecords(authUser))
+      }
+    })
     .subscribe((status, error) => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         announceSyncError(error || new Error(`Realtime subscription failed: ${status}`))
@@ -177,6 +243,8 @@ export const subscribeToSharedWorkspace = (authUser) => {
   const refreshInterval = window.setInterval(() => {
     refresh(syncUserDirectory)
     refresh(() => syncSharedMeetings(authUser))
+    refresh(() => syncSharedTeams(authUser))
+    refresh(() => syncSharedWorkspaceRecords(authUser))
   }, 60_000)
 
   return () => {

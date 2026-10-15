@@ -5,6 +5,7 @@ import { loadWorkspaceForUser } from '../services/supabaseWorkspaceService'
 import {
   subscribeToSharedWorkspace,
   syncSharedMeetings,
+  syncSharedTeams,
   syncUserDirectory,
 } from '../services/supabaseSharedWorkspaceService'
 import { supabase } from '../utils/supabase'
@@ -32,6 +33,12 @@ export const AuthProvider = ({ children }) => {
           syncUserDirectory(),
           syncSharedMeetings(nextSession.user),
         ])
+        try {
+          await syncSharedTeams(nextSession.user)
+        } catch (error) {
+          console.warn('Shared teams could not be loaded:', error.message)
+          window.dispatchEvent(new CustomEvent('avdynamics:sync-error', { detail: { message: error.message } }))
+        }
       }
       setAuthSession(nextSession)
       return true
