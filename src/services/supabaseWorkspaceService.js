@@ -16,8 +16,19 @@ const COLLECTIONS = [
 ]
 
 const collectionByKey = new Map(COLLECTIONS)
+const keyByCollection = new Map(COLLECTIONS.map(([key, collection]) => [collection, key]))
 const pendingWrites = new Map()
 const pendingLoads = new Map()
+const recordSyncs = new Map()
+const sharedCollections = new Set(['companies', 'meetings', 'actionItems', 'documents', 'activity'])
+const stableJson = (value) => {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
 const sanitizeRecord = (key, record) => {
   const safeRecord = { ...record }
   if (key === KEYS.users) delete safeRecord.password
@@ -32,13 +43,12 @@ const sanitizeRecord = (key, record) => {
 const valuesToRows = (ownerId, key, value) => {
   const collection = collectionByKey.get(key)
   if (!collection || value == null) return []
-  const records = Array.isArray(value)
-    ? value.filter((record) => key !== KEYS.meetings || !record.workspaceShared)
-    : [{ id: 'default', value }]
+  if (key === KEYS.teams) return []
+  const records = Array.isArray(value) ? value : [{ id: 'default', value }]
   return records
     .filter((record) => record && record.id != null)
     .map((record) => ({
-      owner_id: record.workspaceOwnerId || ownerId,
+      owner_id: record.workspaceOwnerId || record.sharedOwnerId || ownerId,
       collection,
       record_id: String(record.id),
       data: sanitizeRecord(key, Array.isArray(value) ? record : record.value),
@@ -77,10 +87,20 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
   if (!supabase || !collection) return
 
   const rows = valuesToRows(ownerId, key, value)
-  if (rows.length) {
+  const previousRows = new Map(
+    valuesToRows(ownerId, key, previousValue)
+      .map((row) => [`${row.owner_id}:${row.record_id}`, row])
+  )
+  const changedRows = rows.filter((row) => {
+    const previous = previousRows.get(`${row.owner_id}:${row.record_id}`)
+    return !previous || stableJson(previous.data) !== stableJson(row.data)
+  })
+  if (changedRows.length) {
     const { error } = await supabase
       .from('workspace_records')
-      .upsert(rows, { onConflict: 'owner_id,collection,record_id' })
+      .upsert(changedRows.map((row) => ({ ...row, updated_at: new Date().toISOString() })), {
+        onConflict: 'owner_id,collection,record_id',
+      })
     if (error) throw error
   }
 
@@ -101,6 +121,47 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
       .eq('collection', collection)
       .in('record_id', recordIds)
     if (error) throw error
+  }
+
+  if (key === KEYS.teams) {
+    const teams = Array.isArray(value) ? value : []
+    const previousTeams = Array.isArray(previousValue) ? previousValue : []
+    const previousById = new Map(previousTeams.map((team) => [String(team.id), team]))
+    const teamData = (team) => {
+      const { workspaceShared, sharedOwnerId, workspaceOwnerId, ...data } = team
+      return data
+    }
+    const rowsToSave = teams
+      .filter((team) => team?.id != null)
+      .filter((team) => {
+        const previous = previousById.get(String(team.id))
+        return !previous || stableJson(teamData(previous)) !== stableJson(teamData(team))
+      })
+      .map((team) => ({
+        id: String(team.id),
+        data: teamData(team),
+        created_at: team.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }))
+
+    if (rowsToSave.length) {
+      const { error } = await supabase
+        .from('shared_teams')
+        .upsert(rowsToSave, { onConflict: 'id' })
+      if (error) throw error
+    }
+
+    const nextIds = new Set(teams.filter((team) => team?.id != null).map((team) => String(team.id)))
+    const removedIds = previousTeams
+      .filter((team) => team?.id != null && !nextIds.has(String(team.id)))
+      .map((team) => String(team.id))
+    if (removedIds.length) {
+      const { error } = await supabase
+        .from('shared_teams')
+        .delete()
+        .in('id', removedIds)
+      if (error) throw error
+    }
   }
 
   if (key === KEYS.meetings || key === KEYS.actionItems) {
@@ -170,6 +231,74 @@ export const persistWorkspaceChange = async (key, value, previousValue) => {
   }
 }
 
+const refreshSharedWorkspaceRecords = async () => {
+  const { data, error } = await supabase
+    .from('workspace_records')
+    .select('owner_id, collection, record_id, data')
+    .in('collection', [...sharedCollections])
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+
+  const rowsByCollection = new Map()
+  for (const row of data || []) {
+    const rows = rowsByCollection.get(row.collection) || []
+    const key = keyByCollection.get(row.collection)
+    rows.push({
+      ...sanitizeRecord(key, row.data),
+      workspaceOwnerId: row.owner_id,
+    })
+    rowsByCollection.set(row.collection, rows)
+  }
+
+  const workspaceMeetingIds = new Set(
+    (rowsByCollection.get('meetings') || []).map((meeting) => String(meeting.id))
+  )
+  const remoteMeetingIds = new Set(
+    getData(KEYS.remoteMeetingIds, []).map((id) => String(id))
+  )
+  const sharedMeetingsWithoutWorkspaceRows = getData(KEYS.meetings, []).filter((meeting) =>
+    meeting.workspaceShared &&
+    remoteMeetingIds.has(String(meeting.id)) &&
+    !workspaceMeetingIds.has(String(meeting.id))
+  )
+  if (sharedMeetingsWithoutWorkspaceRows.length) {
+    rowsByCollection.set('meetings', [
+      ...(rowsByCollection.get('meetings') || []),
+      ...sharedMeetingsWithoutWorkspaceRows,
+    ])
+  }
+
+  withoutRemotePersistence(() => {
+    for (const collection of sharedCollections) {
+      const key = keyByCollection.get(collection)
+      if (!key) continue
+      setData(key, withoutLegacyDemoRecords(key, rowsByCollection.get(collection) || []))
+    }
+  })
+}
+
+export const syncSharedWorkspaceRecords = (authUser) => {
+  if (!supabase || !authUser?.id) return Promise.resolve([])
+
+  let state = recordSyncs.get(authUser.id)
+  if (state) {
+    state.needsRefresh = true
+    return state.promise
+  }
+
+  state = { needsRefresh: false, promise: null }
+  state.promise = (async () => {
+    do {
+      state.needsRefresh = false
+      await refreshSharedWorkspaceRecords()
+    } while (state.needsRefresh)
+  })().finally(() => {
+    if (recordSyncs.get(authUser.id) === state) recordSyncs.delete(authUser.id)
+  })
+  recordSyncs.set(authUser.id, state)
+  return state.promise
+}
+
 const accountProfile = (authUser, previous = {}) => ({
   ...previous,
   id: authUser.id,
@@ -234,9 +363,13 @@ const loadWorkspace = async (authUser) => {
     const cloudRows = rowsByCollection.get(collection) || []
     values[key] = key === KEYS.settings
       ? withoutLegacyDemoSettings(cloudRows.find((row) => row.record_id === 'default')?.data || defaultSettings)
-      : withoutLegacyDemoRecords(key, cloudRows.map((row) => ({
+      : key === KEYS.teams
+        ? []
+        : withoutLegacyDemoRecords(key, cloudRows.map((row) => ({
         ...sanitizeRecord(key, row.data),
-        ...(isAdmin && ['companies', 'meetings', 'actionItems'].includes(collection)
+        ...(sharedCollections.has(collection)
+          ? { workspaceOwnerId: row.owner_id }
+          : isAdmin && ['companies', 'meetings', 'actionItems'].includes(collection)
           ? { workspaceOwnerId: row.owner_id }
           : {}),
       })))

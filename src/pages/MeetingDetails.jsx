@@ -427,10 +427,17 @@ const MeetingDetails = () => {
         meetings={[meeting]}
         companies={companies}
         lockedMeetingId={meeting.id}
-        onSubmit={(values) => {
-          createDocument({ ...values, uploadedBy: user?.id, companyId: values.companyId || meeting.companyId }, user?.name)
-          toast('Document uploaded.')
-          setUploadOpen(false)
+        onSubmit={async (values) => {
+          try {
+            await createDocument(
+              { ...values, uploadedBy: user?.id, companyId: values.companyId || meeting.companyId },
+              user?.name
+            )
+            toast('Document uploaded.')
+            setUploadOpen(false)
+          } catch (error) {
+            toast(error.message || 'The document could not be uploaded.', 'warning')
+          }
         }}
       />
 

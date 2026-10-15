@@ -1,6 +1,7 @@
 import { KEYS, getData, addItem, updateItem, deleteItem, findItem } from './storageService'
 import { uid } from '../utils/format'
 import { logActivity } from './dashboardService'
+import { supabase } from '../utils/supabase'
 
 const FILE_DATABASE = 'avdynamics_document_files'
 const FILE_STORE = 'files'
@@ -27,7 +28,7 @@ const saveFile = async (id, file) => {
   }).finally(() => database.close())
 }
 
-export const getDocumentFile = async (id) => {
+const getLocalFile = async (id) => {
   const database = await openFileDatabase()
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(FILE_STORE, 'readonly')
@@ -42,7 +43,23 @@ export const getDocumentFile = async (id) => {
   })
 }
 
+export const getDocumentFile = async (id) => {
+  if (!supabase) return getLocalFile(id)
+
+  const { data, error } = await supabase.storage.from('meeting-documents').download(id)
+  if (!error) return data
+  const localFile = await getLocalFile(id)
+  if (localFile) return localFile
+  throw error
+}
+
 const removeFile = async (id) => {
+  if (supabase) {
+    const { error } = await supabase.storage.from('meeting-documents').remove([id])
+    if (error) throw error
+    return
+  }
+
   const database = await openFileDatabase()
   await new Promise((resolve, reject) => {
     const transaction = database.transaction(FILE_STORE, 'readwrite')
@@ -68,7 +85,17 @@ export const getDocument = (id) => findItem(KEYS.documents, id)
 
 export const createDocument = async (values, actorName = 'Someone') => {
   const id = uid('doc')
-  if (values.file) await saveFile(id, values.file)
+  if (values.file) {
+    if (supabase) {
+      const { error } = await supabase.storage.from('meeting-documents').upload(id, values.file, {
+        contentType: values.file.type || undefined,
+        upsert: true,
+      })
+      if (error) throw error
+    } else {
+      await saveFile(id, values.file)
+    }
+  }
   const { file, ...metadata } = values
   const doc = addItem(KEYS.documents, {
     id,

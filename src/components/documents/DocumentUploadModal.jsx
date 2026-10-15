@@ -8,6 +8,7 @@ import { DOCUMENT_TYPES } from '../../data/seedData'
 import { documentTypeFor } from '../../services/documentsService'
 import { fileSize } from '../../utils/format'
 import { required } from '../../utils/validators'
+import { supabase } from '../../utils/supabase'
 
 const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies = [], lockedMeetingId }) => {
   const [values, setValues] = useState({ name: '', type: 'PDF', size: 0, meetingId: '', companyId: '' })
@@ -47,7 +48,9 @@ const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies
     setFile(file)
     setValues((v) => ({ ...v, name: file.name, type: documentTypeFor(file.name), size: file.size }))
     setErrors((prev) => ({ ...prev, name: undefined }))
-    setNotice('File will be stored in this browser and available to preview and download here.')
+    setNotice(supabase
+      ? 'File will be stored in the shared workspace for all users.'
+      : 'File will be stored in this browser and available to preview and download here.')
   }
 
   const submit = async () => {
@@ -68,7 +71,9 @@ const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies
       open={open}
       onClose={onClose}
       title="Upload document"
-      description="Attach a file to a meeting. Files stay in this browser."
+      description={supabase
+        ? 'Attach a file to a meeting and share it with your workspace.'
+        : 'Attach a file to a meeting. Files stay in this browser.'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
