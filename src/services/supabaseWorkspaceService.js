@@ -40,19 +40,31 @@ const sanitizeRecord = (key, record) => {
   return safeRecord
 }
 
-const valuesToRows = (ownerId, key, value) => {
+const valuesToRows = (ownerId, key, value, ownersByRecord = new Map()) => {
   const collection = collectionByKey.get(key)
   if (!collection || value == null) return []
   if (key === KEYS.teams) return []
   const records = Array.isArray(value) ? value : [{ id: 'default', value }]
   return records
     .filter((record) => record && record.id != null)
-    .map((record) => ({
-      owner_id: record.workspaceOwnerId || record.sharedOwnerId || ownerId,
-      collection,
-      record_id: String(record.id),
-      data: sanitizeRecord(key, Array.isArray(value) ? record : record.value),
-    }))
+    .map((record) => {
+      const recordId = String(record.id)
+      const owners = ownersByRecord.get(recordId) || []
+      const declaredOwner = record.workspaceOwnerId || record.sharedOwnerId
+      const owner = declaredOwner && owners.includes(String(declaredOwner))
+        ? String(declaredOwner)
+        : owners.includes(ownerId)
+          ? ownerId
+          : owners.length === 1
+            ? owners[0]
+            : ownerId
+      return {
+        owner_id: owner,
+        collection,
+        record_id: recordId,
+        data: sanitizeRecord(key, Array.isArray(value) ? record : record.value),
+      }
+    })
 }
 
 const sharedMeetingRows = (ownerId, meetings, actionItems) =>
@@ -82,13 +94,45 @@ const sharedMeetingRows = (ownerId, meetings, actionItems) =>
       }
     })
 
+const resolveWorkspaceRecordOwners = async (ownerId, collection, value, previousValue) => {
+  const recordsWithOtherOwner = [
+    ...(Array.isArray(value) ? value : []),
+    ...(Array.isArray(previousValue) ? previousValue : []),
+  ].filter((record) => {
+    const declaredOwner = record?.workspaceOwnerId || record?.sharedOwnerId
+    return declaredOwner && String(declaredOwner) !== ownerId
+  })
+  if (!recordsWithOtherOwner.length) return new Map()
+
+  const recordIds = [...new Set(recordsWithOtherOwner
+    .filter((record) => record?.id != null)
+    .map((record) => String(record.id)))]
+  if (!recordIds.length) return new Map()
+
+  const { data, error } = await supabase
+    .from('workspace_records')
+    .select('owner_id, record_id')
+    .eq('collection', collection)
+    .in('record_id', recordIds)
+  if (error) throw error
+
+  const ownersByRecord = new Map()
+  for (const row of data || []) {
+    const owners = ownersByRecord.get(String(row.record_id)) || []
+    owners.push(String(row.owner_id))
+    ownersByRecord.set(String(row.record_id), owners)
+  }
+  return ownersByRecord
+}
+
 const persistCollectionForUser = async (ownerId, key, value, previousValue = null) => {
   const collection = collectionByKey.get(key)
   if (!supabase || !collection) return
 
-  const rows = valuesToRows(ownerId, key, value)
+  const ownersByRecord = await resolveWorkspaceRecordOwners(ownerId, collection, value, previousValue)
+  const rows = valuesToRows(ownerId, key, value, ownersByRecord)
   const previousRows = new Map(
-    valuesToRows(ownerId, key, previousValue)
+    valuesToRows(ownerId, key, previousValue, ownersByRecord)
       .map((row) => [`${row.owner_id}:${row.record_id}`, row])
   )
   const changedRows = rows.filter((row) => {
@@ -105,7 +149,7 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
   }
 
   const nextKeys = new Set(rows.map((row) => `${row.owner_id}:${row.record_id}`))
-  const removedRows = valuesToRows(ownerId, key, previousValue)
+  const removedRows = valuesToRows(ownerId, key, previousValue, ownersByRecord)
     .filter((row) => !nextKeys.has(`${row.owner_id}:${row.record_id}`))
   const removedByOwner = new Map()
   for (const row of removedRows) {
