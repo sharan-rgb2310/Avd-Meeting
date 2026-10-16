@@ -313,13 +313,17 @@ export const persistWorkspaceChange = async (key, value, previousValue) => {
   }
 }
 
-const refreshSharedWorkspaceRecords = async () => {
-  const { data, error } = await supabase
-    .from('workspace_records')
-    .select('owner_id, collection, record_id, data')
-    .in('collection', [...sharedCollections])
-    .order('updated_at', { ascending: false })
+const refreshSharedWorkspaceRecords = async (authUserId) => {
+  const [{ data, error }, { data: sharedMeetings, error: sharedMeetingsError }] = await Promise.all([
+    supabase
+      .from('workspace_records')
+      .select('owner_id, collection, record_id, data')
+      .in('collection', [...sharedCollections])
+      .order('updated_at', { ascending: false }),
+    supabase.from('shared_meetings').select('id'),
+  ])
   if (error) throw error
+  if (sharedMeetingsError) throw sharedMeetingsError
 
   const rowsByCollection = new Map()
   for (const row of data || []) {
@@ -338,9 +342,11 @@ const refreshSharedWorkspaceRecords = async () => {
   const remoteMeetingIds = new Set(
     getData(KEYS.remoteMeetingIds, []).map((id) => String(id))
   )
+  const liveSharedMeetingIds = new Set((sharedMeetings || []).map((meeting) => String(meeting.id)))
   const sharedMeetingsWithoutWorkspaceRows = getData(KEYS.meetings, []).filter((meeting) =>
     meeting.workspaceShared &&
     remoteMeetingIds.has(String(meeting.id)) &&
+    liveSharedMeetingIds.has(String(meeting.id)) &&
     !workspaceMeetingIds.has(String(meeting.id))
   )
   if (sharedMeetingsWithoutWorkspaceRows.length) {
@@ -350,6 +356,7 @@ const refreshSharedWorkspaceRecords = async () => {
     ])
   }
 
+  if (recordSyncs.get(authUserId)?.needsRefresh) return
   withoutRemotePersistence(() => {
     for (const collection of sharedCollections) {
       const key = keyByCollection.get(collection)
@@ -372,7 +379,7 @@ export const syncSharedWorkspaceRecords = (authUser) => {
   state.promise = (async () => {
     do {
       state.needsRefresh = false
-      await refreshSharedWorkspaceRecords()
+      await refreshSharedWorkspaceRecords(authUser.id)
     } while (state.needsRefresh)
   })().finally(() => {
     if (recordSyncs.get(authUser.id) === state) recordSyncs.delete(authUser.id)

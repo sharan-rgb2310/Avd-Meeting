@@ -2,7 +2,9 @@ import { KEYS, getData, addItem, updateItem, deleteItem, findItem, setData } fro
 import { uid } from '../utils/format'
 import { logActivity } from './dashboardService'
 import { sendMeetingInvitations } from './emailNotificationService'
-import { persistWorkspaceChange } from './supabaseWorkspaceService'
+import { persistWorkspaceChange, syncSharedWorkspaceRecords } from './supabaseWorkspaceService'
+import { syncSharedMeetings } from './supabaseSharedWorkspaceService'
+import { supabase } from '../utils/supabase'
 import { formatDate, formatTime } from '../utils/format'
 
 export const listMeetings = () => getData(KEYS.meetings, [])
@@ -127,6 +129,26 @@ export const removeMeeting = async (id) => {
   )
   setData(KEYS.documents, getData(KEYS.documents, []).filter((d) => d.meetingId !== id))
   if (meeting) logActivity(`${meeting.title} was deleted`, 'meeting', id, meeting.companyId)
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.auth.getSession()
+      if (error) throw error
+      const authUser = data.session?.user
+      if (authUser) {
+        const results = await Promise.allSettled([
+          syncSharedMeetings(authUser),
+          syncSharedWorkspaceRecords(authUser),
+        ])
+        const failedSync = results.find((result) => result.status === 'rejected')
+        if (failedSync) throw failedSync.reason
+      }
+    } catch (error) {
+      console.warn('Meeting was deleted, but the workspace could not be refreshed:', error.message)
+      window.dispatchEvent(new CustomEvent('avdynamics:sync-error', { detail: { message: error.message } }))
+    }
+  }
+
   return id
 }
 
