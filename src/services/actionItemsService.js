@@ -5,7 +5,7 @@ import { logActivity } from './dashboardService'
 export const listActionItems = () => getData(KEYS.actionItems, [])
 export const getActionItem = (id) => findItem(KEYS.actionItems, id)
 
-export const createActionItem = (values, actorName = 'Someone') => {
+export const createActionItem = (values, actorName = 'Someone', actorId = '') => {
   const item = addItem(KEYS.actionItems, {
     id: uid('act'),
     status: 'To Do',
@@ -14,6 +14,7 @@ export const createActionItem = (values, actorName = 'Someone') => {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...values,
+    createdBy: actorId || values.createdBy || '',
   })
   logActivity(`${actorName} created action item ${item.title}`, 'action', item.id, item.companyId)
   return item

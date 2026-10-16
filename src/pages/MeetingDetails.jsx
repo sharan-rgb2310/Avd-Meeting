@@ -79,6 +79,7 @@ const MeetingDetails = () => {
 
   const [tab, setTab] = useState('meeting')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [rescheduleOpen, setRescheduleOpen] = useState(false)
   const [participantOpen, setParticipantOpen] = useState(false)
   const [actionOpen, setActionOpen] = useState(false)
@@ -88,12 +89,8 @@ const MeetingDetails = () => {
   const creator = users.find((u) => u.id === meeting?.createdBy)
   const responsible = users.find((u) => u.id === meeting?.responsibleId)
   const userById = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users])
-  const canManageMeeting = !meeting?.workspaceShared ||
-    meeting.sharedOwnerId === user?.id ||
-    user?.role === 'Admin'
-  const actionItems = meeting?.workspaceShared && !canManageMeeting
-    ? meeting.sharedActionItems || []
-    : localActionItems
+  const canManageMeeting = !meeting?.workspaceShared || meeting.sharedOwnerId === user?.id
+  const actionItems = localActionItems
 
   if (loading) return <LoadingSkeleton rows={7} />
   if (!meeting) {
@@ -415,7 +412,11 @@ const MeetingDetails = () => {
         users={users}
         lockedMeetingId={meeting.id}
         onSubmit={(values) => {
-          createActionItem({ ...values, companyId: values.companyId || meeting.companyId }, user?.name)
+          createActionItem(
+            { ...values, companyId: values.companyId || meeting.companyId },
+            user?.name,
+            user?.id
+          )
           toast('Action item created.')
           setActionOpen(false)
         }}
@@ -455,13 +456,24 @@ const MeetingDetails = () => {
 
       <ConfirmDialog
         open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
+        onClose={() => {
+          if (!deleting) setDeleteOpen(false)
+        }}
         title={`Delete ${meeting.title}?`}
         description="This removes the meeting and its documents. Action items stay in the workspace without a meeting link."
-        onConfirm={() => {
-          removeMeeting(meeting.id)
-          toast('Meeting deleted successfully.')
-          navigate('/meetings')
+        loading={deleting}
+        onConfirm={async () => {
+          setDeleting(true)
+          try {
+            await removeMeeting(meeting.id)
+            toast('Meeting deleted successfully.')
+            navigate('/meetings', { replace: true })
+          } catch (error) {
+            toast(error.message || 'The meeting could not be deleted from cloud storage.', 'warning')
+          } finally {
+            setDeleting(false)
+            setDeleteOpen(false)
+          }
         }}
       />
     </div>

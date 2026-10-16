@@ -132,9 +132,9 @@ export const syncSharedMeetings = (authUser) => {
       .eq('owner_id', authUser.id)
     if (existingError) throw existingError
     const existingById = new Map((existingRows || []).map((row) => [row.id, row]))
-    const actionItems = getData(KEYS.actionItems, [])
     const rowsToPublish = ownedMeetings.map((meeting) => {
-      const { workspaceShared, sharedOwnerId, ...data } = meeting
+      const { workspaceShared, sharedOwnerId, workspaceOwnerId, ...data } = meeting
+      delete data.sharedActionItems
       return {
         id: String(meeting.id),
         owner_id: authUser.id,
@@ -143,7 +143,6 @@ export const syncSharedMeetings = (authUser) => {
           .filter((participantId) => participantId && participantId !== authUser.id))],
         data: {
           ...data,
-          sharedActionItems: actionItems.filter((item) => item.meetingId === meeting.id),
           companyName: meeting.companyName ||
             getData(KEYS.companies, []).find((company) => company.id === meeting.companyId)?.name ||
             '',
@@ -187,16 +186,21 @@ export const syncSharedMeetings = (authUser) => {
         ...operationalMeeting,
         id: row.id,
         participants: operationalMeeting?.participants || row.data.participants || [],
-        sharedActionItems: operationalMeeting?.sharedActionItems || row.data.sharedActionItems || [],
         workspaceShared: true,
         sharedOwnerId: row.owner_id,
       }
     })
     const remoteIds = new Set(remoteMeetings.map((meeting) => meeting.id))
     const previouslyRemoteIds = new Set(getData(KEYS.remoteMeetingIds, []))
+    const { data: workspaceRows, error: workspaceRowsError } = await supabase
+      .from('workspace_records')
+      .select('record_id')
+      .eq('collection', 'meetings')
+    if (workspaceRowsError) throw workspaceRowsError
+    const workspaceMeetingIds = new Set((workspaceRows || []).map((row) => String(row.record_id)))
     const localMeetings = getData(KEYS.meetings, []).filter((meeting) =>
       !remoteIds.has(String(meeting.id)) &&
-      (meeting.workspaceOwnerId || !previouslyRemoteIds.has(String(meeting.id)))
+      (workspaceMeetingIds.has(String(meeting.id)) || !previouslyRemoteIds.has(String(meeting.id)))
     )
 
     withoutRemotePersistence(() => {

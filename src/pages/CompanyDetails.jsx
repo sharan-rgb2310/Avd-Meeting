@@ -244,7 +244,7 @@ const CompanyDetails = () => {
         users={users}
         lockedCompanyId={company.id}
         onSubmit={(values) => {
-          createActionItem(values, user?.name)
+          createActionItem(values, user?.name, user?.id)
           toast('Action item created.')
           setActionOpen(false)
         }}

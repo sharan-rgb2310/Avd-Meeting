@@ -79,14 +79,17 @@ const valuesToRows = (ownerId, key, value, ownersByRecord = new Map()) => {
   )
 }
 
-const sharedMeetingRows = (ownerId, meetings, actionItems) =>
+const sharedMeetingRows = (ownerId, meetings) =>
   (Array.isArray(meetings) ? meetings : [])
     .filter((meeting) => {
-      const isAdmin = getData(KEYS.users, []).some((user) => user.id === ownerId && user.role === 'Admin')
-      return isAdmin || meeting?.createdBy === ownerId || meeting?.sharedOwnerId === ownerId
+      return meeting?.createdBy === ownerId ||
+        meeting?.sharedOwnerId === ownerId ||
+        meeting?.workspaceOwnerId === ownerId
     })
     .map((meeting) => {
       const meetingOwnerId = meeting.sharedOwnerId || meeting.workspaceOwnerId || ownerId
+      const meetingData = sanitizeRecord(KEYS.meetings, meeting)
+      delete meetingData.sharedActionItems
       return {
         id: String(meeting.id),
         owner_id: meetingOwnerId,
@@ -94,12 +97,10 @@ const sharedMeetingRows = (ownerId, meetings, actionItems) =>
           .map((participant) => String(participant.userId || ''))
           .filter((participantId) => participantId && participantId !== meetingOwnerId))],
         data: {
-          ...sanitizeRecord(KEYS.meetings, meeting),
+          ...meetingData,
           companyName: meeting.companyName ||
             getData(KEYS.companies, []).find((company) => company.id === meeting.companyId)?.name ||
             '',
-          sharedActionItems: (Array.isArray(actionItems) ? actionItems : [])
-            .filter((item) => item.meetingId === meeting.id),
         },
         created_at: meeting.createdAt || new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -226,9 +227,8 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
   if (key === KEYS.meetings || key === KEYS.actionItems) {
     const meetings = key === KEYS.meetings ? value : getData(KEYS.meetings, [])
     const actionItems = key === KEYS.actionItems ? value : getData(KEYS.actionItems, [])
-    const isAdmin = getData(KEYS.users, []).some((user) => user.id === ownerId && user.role === 'Admin')
     const sharedRows = uniqueBy(
-      sharedMeetingRows(ownerId, meetings, actionItems),
+      sharedMeetingRows(ownerId, meetings),
       (row) => row.id
     )
     if (sharedRows.length) {
@@ -242,16 +242,26 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
       const nextIds = new Set((Array.isArray(meetings) ? meetings : []).map((meeting) => String(meeting.id)))
       const removedMeetings = previousValue.filter((meeting) => {
         if (nextIds.has(String(meeting.id))) return false
-        return isAdmin || meeting?.createdBy === ownerId || meeting?.sharedOwnerId === ownerId
+        return meeting?.createdBy === ownerId ||
+          meeting?.sharedOwnerId === ownerId ||
+          meeting?.workspaceOwnerId === ownerId
       })
       if (removedMeetings.length) {
-        let deleteQuery = supabase
+        const { error } = await supabase
           .from('shared_meetings')
           .delete()
+          .eq('owner_id', ownerId)
           .in('id', removedMeetings.map((meeting) => String(meeting.id)))
-        if (!isAdmin) deleteQuery = deleteQuery.eq('owner_id', ownerId)
-        const { error } = await deleteQuery
         if (error) throw error
+        const { data: remainingMeetings, error: verifyMeetingsError } = await supabase
+          .from('shared_meetings')
+          .select('id')
+          .eq('owner_id', ownerId)
+          .in('id', removedMeetings.map((meeting) => String(meeting.id)))
+        if (verifyMeetingsError) throw verifyMeetingsError
+        if (remainingMeetings?.length) {
+          throw new Error('The meeting is still present in cloud storage. Check your access and try again.')
+        }
 
         const removedWorkspaceMeetings = new Map()
         for (const meeting of removedMeetings) {
@@ -268,6 +278,16 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
             .eq('collection', 'meetings')
             .in('record_id', recordIds)
           if (workspaceDeleteError) throw workspaceDeleteError
+          const { data: remainingRecords, error: verifyRecordsError } = await supabase
+            .from('workspace_records')
+            .select('record_id')
+            .eq('owner_id', recordOwnerId)
+            .eq('collection', 'meetings')
+            .in('record_id', recordIds)
+          if (verifyRecordsError) throw verifyRecordsError
+          if (remainingRecords?.length) {
+            throw new Error('The meeting is still present in cloud workspace records. Check your access and try again.')
+          }
         }
       }
     }
