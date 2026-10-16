@@ -1,7 +1,10 @@
 import { KEYS, getData, setData, withoutRemotePersistence } from './storageService'
 import { withoutLegacyDemoRecords } from '../data/legacyDemoData'
 import { supabase } from '../utils/supabase'
-import { syncSharedWorkspaceRecords } from './supabaseWorkspaceService'
+import {
+  isMeetingPendingDeletion,
+  syncSharedWorkspaceRecords,
+} from './supabaseWorkspaceService'
 
 const directorySyncs = new Map()
 const meetingSyncs = new Map()
@@ -126,7 +129,9 @@ export const syncSharedMeetings = (authUser) => {
           .filter((meeting) => meeting.workspaceOwnerId)
           .map((meeting) => [String(meeting.id), meeting])
       )
-      remoteMeetings = (data || []).map((row) => {
+      remoteMeetings = (data || []).filter((row) =>
+        !isMeetingPendingDeletion(authUser.id, row.id)
+      ).map((row) => {
         const operationalMeeting = operationalMeetings.get(String(row.id))
         return {
           ...row.data,
@@ -147,6 +152,7 @@ export const syncSharedMeetings = (authUser) => {
       const workspaceMeetingIds = new Set((workspaceRows || []).map((row) => String(row.record_id)))
       const localMeetings = getData(KEYS.meetings, []).filter((meeting) =>
         !remoteIds.has(String(meeting.id)) &&
+        !isMeetingPendingDeletion(authUser.id, meeting.id) &&
         (workspaceMeetingIds.has(String(meeting.id)) || !previouslyRemoteIds.has(String(meeting.id)))
       )
 

@@ -1,8 +1,21 @@
-import { KEYS, getData, addItem, updateItem, deleteItem, findItem, setData } from './storageService'
+import {
+  KEYS,
+  getData,
+  addItem,
+  updateItem,
+  deleteItem,
+  findItem,
+  setData,
+  withoutRemotePersistence,
+} from './storageService'
 import { uid } from '../utils/format'
 import { logActivity } from './dashboardService'
 import { sendMeetingInvitations } from './emailNotificationService'
-import { persistWorkspaceChange, syncSharedWorkspaceRecords } from './supabaseWorkspaceService'
+import {
+  deleteWorkspaceMeeting,
+  persistWorkspaceChange,
+  syncSharedWorkspaceRecords,
+} from './supabaseWorkspaceService'
 import { syncSharedMeetings } from './supabaseSharedWorkspaceService'
 import { supabase } from '../utils/supabase'
 import { formatDate, formatTime } from '../utils/format'
@@ -118,11 +131,9 @@ export const removeMeeting = async (id) => {
   const meeting = getMeeting(id)
   if (!meeting) return id
 
-  const previousMeetings = getData(KEYS.meetings, [])
-  const nextMeetings = previousMeetings.filter((entry) => entry.id !== id)
-  await persistWorkspaceChange(KEYS.meetings, nextMeetings, previousMeetings)
+  await deleteWorkspaceMeeting(id)
 
-  deleteItem(KEYS.meetings, id)
+  withoutRemotePersistence(() => deleteItem(KEYS.meetings, id))
   setData(
     KEYS.actionItems,
     getData(KEYS.actionItems, []).map((a) => (a.meetingId === id ? { ...a, meetingId: '' } : a))
