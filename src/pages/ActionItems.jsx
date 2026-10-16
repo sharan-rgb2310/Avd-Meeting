@@ -64,7 +64,7 @@ const ActionItems = () => {
       updateActionItem(editing.id, values, user?.name)
       toast('Action item updated.')
     } else {
-      createActionItem(values, user?.name)
+      createActionItem(values, user?.name, user?.id)
       toast('Action item created.')
     }
     setFormOpen(false)

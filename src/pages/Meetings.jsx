@@ -64,6 +64,7 @@ const Meetings = () => {
   const [selected, setSelected] = useState([])
   const [pendingDelete, setPendingDelete] = useState(null)
   const [pendingBulkDelete, setPendingBulkDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [pendingCancel, setPendingCancel] = useState(null)
   const [rescheduling, setRescheduling] = useState(null)
 
@@ -299,15 +300,25 @@ const Meetings = () => {
 
       <ConfirmDialog
         open={pendingBulkDelete}
-        onClose={() => setPendingBulkDelete(false)}
+        onClose={() => {
+          if (!deleting) setPendingBulkDelete(false)
+        }}
         title={`Delete ${selected.length} selected meeting${selected.length === 1 ? '' : 's'}?`}
         description="This removes the selected meetings and their documents. Action items stay in the workspace without a meeting link."
         confirmLabel={`Delete ${selected.length} meeting${selected.length === 1 ? '' : 's'}`}
-        onConfirm={() => {
-          selected.forEach((id) => removeMeeting(id))
-          toast('Selected meetings deleted successfully.')
-          setSelected([])
-          setPendingBulkDelete(false)
+        loading={deleting}
+        onConfirm={async () => {
+          setDeleting(true)
+          try {
+            await Promise.all(selected.map((id) => removeMeeting(id)))
+            toast('Selected meetings deleted successfully.')
+            setSelected([])
+            setPendingBulkDelete(false)
+          } catch (error) {
+            toast(error.message || 'The selected meetings could not be deleted from cloud storage.', 'warning')
+          } finally {
+            setDeleting(false)
+          }
         }}
       />
 
@@ -327,13 +338,23 @@ const Meetings = () => {
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}
-        onClose={() => setPendingDelete(null)}
+        onClose={() => {
+          if (!deleting) setPendingDelete(null)
+        }}
         title={`Delete ${pendingDelete?.title}?`}
         description="This removes the meeting and its documents. Action items stay in the workspace without a meeting link."
-        onConfirm={() => {
-          removeMeeting(pendingDelete.id)
-          toast('Meeting deleted successfully.')
-          setPendingDelete(null)
+        loading={deleting}
+        onConfirm={async () => {
+          setDeleting(true)
+          try {
+            await removeMeeting(pendingDelete.id)
+            toast('Meeting deleted successfully.')
+            setPendingDelete(null)
+          } catch (error) {
+            toast(error.message || 'The meeting could not be deleted from cloud storage.', 'warning')
+          } finally {
+            setDeleting(false)
+          }
         }}
       />
     </div>

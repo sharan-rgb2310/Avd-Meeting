@@ -15,11 +15,17 @@ export const createTeam = (values) =>
 
 export const updateTeam = (id, patch) => updateItem(KEYS.teams, id, patch)
 
-export const removeTeam = (id) => {
+export const removeTeam = (id, actorId = '') => {
   deleteItem(KEYS.teams, id)
   setData(
     KEYS.meetings,
-    getData(KEYS.meetings, []).map((m) => (m.teamId === id ? { ...m, teamId: '' } : m))
+    getData(KEYS.meetings, []).map((meeting) => {
+      const canUpdateMeeting = meeting.workspaceOwnerId === actorId ||
+        meeting.sharedOwnerId === actorId ||
+        meeting.createdBy === actorId ||
+        (!meeting.workspaceOwnerId && !meeting.sharedOwnerId && !meeting.workspaceShared)
+      return meeting.teamId === id && canUpdateMeeting ? { ...meeting, teamId: '' } : meeting
+    })
   )
   setData(
     KEYS.users,

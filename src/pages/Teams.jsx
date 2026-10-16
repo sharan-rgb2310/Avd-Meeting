@@ -20,12 +20,14 @@ import useStore from '../hooks/useStore'
 import useLoading from '../hooks/useLoading'
 import usePagination from '../hooks/usePagination'
 import { useToast } from '../context/ToastContext'
+import { useAuth } from '../context/AuthContext'
 import { DEPARTMENTS } from '../data/seedData'
 import { sortBy } from '../utils/format'
 
 const Teams = () => {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { user } = useAuth()
   const loading = useLoading(340)
 
   const [teams] = useStore(() => getData(KEYS.teams, []))
@@ -158,7 +160,10 @@ const Teams = () => {
             updateTeam(editing.id, values)
             toast('Team updated successfully.')
           } else {
-            createTeam(values)
+            createTeam({
+              ...values,
+              memberIds: Array.from(new Set([...(values.memberIds || []), user?.id].filter(Boolean))),
+            })
             toast('Team created.')
           }
           setFormOpen(false)
@@ -172,7 +177,7 @@ const Teams = () => {
         title={`Delete ${pendingDelete?.name}?`}
         description="Members keep their accounts. Meetings assigned to this team lose their team link."
         onConfirm={() => {
-          removeTeam(pendingDelete.id)
+          removeTeam(pendingDelete.id, user?.id)
           toast('Team deleted.')
           setPendingDelete(null)
         }}

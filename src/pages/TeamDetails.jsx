@@ -18,17 +18,20 @@ import { removeTeam, updateTeam } from '../services/teamsService'
 import useStore from '../hooks/useStore'
 import useLoading from '../hooks/useLoading'
 import { useToast } from '../context/ToastContext'
+import { useAuth } from '../context/AuthContext'
 import { formatDate, formatTime, relativeDay } from '../utils/format'
 
 const TeamDetails = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { user } = useAuth()
   const loading = useLoading(320)
 
   const [team] = useStore(() => getData(KEYS.teams, []).find((t) => t.id === id) || null, [id])
   const [users] = useStore(() => getData(KEYS.users, []))
   const [meetings] = useStore(() => getData(KEYS.meetings, []).filter((m) => m.teamId === id), [id])
+  const [allActionItems] = useStore(() => getData(KEYS.actionItems, []))
   const [companies] = useStore(() => getData(KEYS.companies, []))
 
   const [editOpen, setEditOpen] = useState(false)
@@ -42,7 +45,6 @@ const TeamDetails = () => {
   const members = users.filter((u) => (team.memberIds || []).includes(u.id))
   const lead = users.find((u) => u.id === team.leadId)
   const meetingIds = meetings.map((m) => m.id)
-  const [allActionItems] = useStore(() => getData(KEYS.actionItems, []))
   const actionItems = allActionItems.filter(
     (a) => meetingIds.includes(a.meetingId) || (team.memberIds || []).includes(a.assigneeId)
   )
@@ -181,7 +183,7 @@ const TeamDetails = () => {
         title={`Delete ${team.name}?`}
         description="Members keep their accounts. Meetings assigned to this team lose their team link."
         onConfirm={() => {
-          removeTeam(team.id)
+          removeTeam(team.id, user?.id)
           toast('Team deleted.')
           navigate('/teams')
         }}

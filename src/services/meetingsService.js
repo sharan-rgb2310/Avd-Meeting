@@ -28,6 +28,48 @@ const resolveCompany = (values) => {
   return match ? { ...values, companyId: match.id, companyName: '' } : { ...values, companyId: '', companyName: name }
 }
 
+// ================= EMAIL HELPERS (new) =================
+
+// Gets a person's display name
+const userName = (u) => u?.name || u?.fullName || u?.email || ''
+
+// Turns the participants into a list of { name, email }
+const buildRecipients = (meeting) => {
+  const users = getData(KEYS.users, [])
+  return (meeting.participants || [])
+    .map((p) => users.find((u) => u.id === p.userId))
+    .filter((u) => u && u.email)
+    .map((u) => ({ name: userName(u), email: u.email }))
+}
+
+// Replaces internal IDs with readable names so the email never shows raw IDs
+const toEmailMeeting = (meeting) => {
+  const users = getData(KEYS.users, [])
+  const company = getData(KEYS.companies, []).find((c) => c.id === meeting.companyId)
+  const responsible = users.find((u) => u.id === meeting.responsibleId)
+  const { companyId, responsibleId, ...rest } = meeting
+  return {
+    ...rest,
+    companyName: company?.name || meeting.companyName || '',
+    responsible: userName(responsible),
+  }
+}
+
+// One place that sends every meeting email. It never breaks the app if it fails.
+const sendMeetingEmail = (meeting, action, { previous = null, note = '', createdByName = '' } = {}) => {
+  const recipients = buildRecipients(meeting)
+  if (!recipients.length) return
+  sendMeetingInvitations(toEmailMeeting(meeting), recipients, action, {
+    previous: previous ? toEmailMeeting(previous) : null,
+    note,
+    createdByName,
+  }).catch((error) => {
+    console.warn(`Meeting ${action} email was not sent:`, error.message)
+  })
+}
+
+// ================= MEETING FUNCTIONS =================
+
 export const createMeeting = (values, actorName = 'Someone') => {
   const meeting = addItem(KEYS.meetings, {
     id: uid('mtg'),
@@ -50,15 +92,10 @@ export const createMeeting = (values, actorName = 'Someone') => {
     ...resolveCompany(values),
   })
   logActivity(`${actorName} created ${meeting.title}`, 'meeting', meeting.id, meeting.companyId)
-  const users = getData(KEYS.users, [])
-  const recipients = (meeting.participants || [])
-    .map((participant) => users.find((user) => user.id === participant.userId)?.email)
-    .filter(Boolean)
-  if (recipients.length) {
-    sendMeetingInvitations(meeting, recipients).catch((error) => {
-      console.warn('Meeting invitation email was not sent:', error.message)
-    })
-  }
+
+  // CHANGED: sends the "created" email with names
+  sendMeetingEmail(meeting, 'created', { createdByName: actorName })
+
   return meeting
 }
 
@@ -75,8 +112,14 @@ export const updateMeeting = (id, patch, actorName) => {
   return updated
 }
 
-export const removeMeeting = (id) => {
+export const removeMeeting = async (id) => {
   const meeting = getMeeting(id)
+  if (!meeting) return id
+
+  const previousMeetings = getData(KEYS.meetings, [])
+  const nextMeetings = previousMeetings.filter((entry) => entry.id !== id)
+  await persistWorkspaceChange(KEYS.meetings, nextMeetings, previousMeetings)
+
   deleteItem(KEYS.meetings, id)
   setData(
     KEYS.actionItems,
@@ -87,7 +130,11 @@ export const removeMeeting = (id) => {
   return id
 }
 
+// CHANGED: sends the "rescheduled" email
 export const rescheduleMeeting = async (id, { date, startTime, reason }, actorName = 'Someone') => {
+  const existing = getMeeting(id)
+  const previous = existing ? { ...existing } : null // copy of the OLD meeting
+
   const updated = updateMeeting(id, {
     date,
     startTime,
@@ -102,14 +149,42 @@ export const rescheduleMeeting = async (id, { date, startTime, reason }, actorNa
       id,
       updated.companyId
     )
+    sendMeetingEmail(updated, 'rescheduled', { previous, note: reason })
   }
   return updated
 }
 
-export const setMeetingStatus = (id, status, actorName = 'Someone') => {
+// Which statuses send which email (keys are lowercase)
+const STATUS_ACTION = {
+  cancelled: 'cancelled',
+  canceled: 'cancelled',
+  'on hold': 'on_hold',
+  hold: 'on_hold',
+}
+
+// CHANGED: sends cancelled / on hold / resumed emails
+export const setMeetingStatus = (id, status, actorName = 'Someone', reason = '') => {
+  const existing = getMeeting(id)
+  const previous = existing ? { ...existing } : null
+
   const updated = updateMeeting(id, { status })
-  if (updated) logActivity(`${actorName} set ${updated.title} to ${status}`, 'meeting', id, updated.companyId)
+  if (updated) {
+    logActivity(`${actorName} set ${updated.title} to ${status}`, 'meeting', id, updated.companyId)
+
+    const key = String(status).trim().toLowerCase()
+    const prevKey = String(previous?.status || '').trim().toLowerCase()
+    let action = STATUS_ACTION[key]
+    if (!action && prevKey === 'on hold' && key === 'scheduled') action = 'resumed'
+
+    if (action) sendMeetingEmail(updated, action, { previous, note: reason })
+  }
   return updated
+}
+
+// NEW: call this after a normal edit (title, agenda, location...) to email "updated"
+export const notifyMeetingUpdated = (id, previous, note = '') => {
+  const meeting = getMeeting(id)
+  if (meeting) sendMeetingEmail(meeting, 'updated', { previous, note })
 }
 
 export const addParticipant = (id, userId, type = 'Team Member') =>
