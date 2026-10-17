@@ -2,6 +2,7 @@ import { supabase } from '../utils/supabase'
 import { KEYS, getData, setData, withoutRemotePersistence } from './storageService'
 import { defaultSettings } from '../data/seedData'
 import { withoutLegacyDemoRecords, withoutLegacyDemoSettings } from '../data/legacyDemoData'
+import { canUserViewMeeting, canUserViewWorkspaceMeeting } from '../utils/meetingAccess'
 
 const COLLECTIONS = [
   [KEYS.users, 'users'],
@@ -443,13 +444,27 @@ const refreshSharedWorkspaceRecords = async (authUserId) => {
       .select('owner_id, collection, record_id, data')
       .in('collection', [...sharedCollections])
       .order('updated_at', { ascending: false }),
-    supabase.from('shared_meetings').select('id'),
+    supabase.from('shared_meetings').select('id, owner_id, participant_ids, data'),
   ])
   if (error) throw error
   if (sharedMeetingsError) throw sharedMeetingsError
 
+  const visibleMeetings = new Map(
+    (sharedMeetings || [])
+      .filter((meeting) => canUserViewMeeting({
+        ...meeting.data,
+        owner_id: meeting.owner_id,
+        participant_ids: meeting.participant_ids,
+      }, authUserId))
+      .map((meeting) => [String(meeting.id), meeting])
+  )
   const rowsByCollection = new Map()
   for (const row of data || []) {
+    if (
+      row.collection === 'meetings'
+      && !canUserViewWorkspaceMeeting(row, authUserId)
+      && !visibleMeetings.has(String(row.record_id))
+    ) continue
     if (row.collection === 'meetings' && isMeetingPendingDeletion(authUserId, row.record_id)) continue
     const rows = rowsByCollection.get(row.collection) || []
     const key = keyByCollection.get(row.collection)
@@ -469,8 +484,9 @@ const refreshSharedWorkspaceRecords = async (authUserId) => {
   const liveSharedMeetingIds = new Set((sharedMeetings || []).map((meeting) => String(meeting.id)))
   const sharedMeetingsWithoutWorkspaceRows = getData(KEYS.meetings, []).filter((meeting) =>
     meeting.workspaceShared &&
+    canUserViewMeeting(meeting, authUserId) &&
     remoteMeetingIds.has(String(meeting.id)) &&
-    liveSharedMeetingIds.has(String(meeting.id)) &&
+    visibleMeetings.has(String(meeting.id)) &&
     !isMeetingPendingDeletion(authUserId, meeting.id) &&
     !workspaceMeetingIds.has(String(meeting.id))
   )
@@ -556,6 +572,10 @@ const loadWorkspace = async (authUser) => {
 
   const rowsByCollection = new Map()
   for (const row of records || []) {
+    if (
+      row.collection === 'meetings'
+      && !canUserViewWorkspaceMeeting(row, authUser.id)
+    ) continue
     const current = rowsByCollection.get(row.collection) || []
     current.push(row)
     rowsByCollection.set(row.collection, current)

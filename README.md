@@ -107,6 +107,7 @@ The linked Supabase project has previously been updated with the nullable free-f
 If meeting deletion reports that `public.delete_workspace_meeting(p_meeting_id)` is missing from the schema cache, apply `supabase/migrations/20261017082630_ensure_meeting_delete_rpc.sql` to the linked database and reload the PostgREST schema cache. This function runs as the caller and deletes only that caller's meeting records.
 
 The per-user data-access migration removes permissive legacy policies and applies owner, creator, assignee, and meeting-participant checks to both normalized tables and `workspace_records`. Admin status does not grant access to another user's meetings, tasks, documents, or companies. RLS must remain enabled; service-role credentials must never be exposed to the client. All signed-in active users can view the directory, while profile role changes are performed server-side. Demo fixture IDs are cleaned selectively; registered Auth accounts and unrelated workspace data are not removed.
+If users still see meetings they are not invited to, apply `supabase/migrations/20261017092940_restrict_meeting_visibility.sql` to the same Supabase project used by the deployed app. This forward migration removes any older permissive policies on meeting storage and recreates creator/participant-only policies. The Supabase client also filters meeting records by the current user's ID before displaying them; database RLS remains the security boundary for direct API access.
 
 ## Gmail meeting invitations
 

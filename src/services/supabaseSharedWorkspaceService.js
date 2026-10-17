@@ -5,6 +5,7 @@ import {
   isMeetingPendingDeletion,
   syncSharedWorkspaceRecords,
 } from './supabaseWorkspaceService'
+import { canUserViewMeeting } from '../utils/meetingAccess'
 
 const directorySyncs = new Map()
 const meetingSyncs = new Map()
@@ -130,7 +131,8 @@ export const syncSharedMeetings = (authUser) => {
           .map((meeting) => [String(meeting.id), meeting])
       )
       remoteMeetings = (data || []).filter((row) =>
-        !isMeetingPendingDeletion(authUser.id, row.id)
+        canUserViewMeeting({ ...row.data, owner_id: row.owner_id, participant_ids: row.participant_ids }, authUser.id)
+        && !isMeetingPendingDeletion(authUser.id, row.id)
       ).map((row) => {
         const operationalMeeting = operationalMeetings.get(String(row.id))
         return {
@@ -151,6 +153,7 @@ export const syncSharedMeetings = (authUser) => {
       if (workspaceRowsError) throw workspaceRowsError
       const workspaceMeetingIds = new Set((workspaceRows || []).map((row) => String(row.record_id)))
       const localMeetings = getData(KEYS.meetings, []).filter((meeting) =>
+        canUserViewMeeting(meeting, authUser.id) &&
         !remoteIds.has(String(meeting.id)) &&
         !isMeetingPendingDeletion(authUser.id, meeting.id) &&
         (workspaceMeetingIds.has(String(meeting.id)) || !previouslyRemoteIds.has(String(meeting.id)))
