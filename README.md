@@ -34,9 +34,9 @@ An enterprise meeting management, CRM and productivity workspace built with Reac
 - Priorities (Low / Medium / High / Critical), assignment, due dates, meeting and company links, full CRUD
 
 **Documents**
-- Upload files into browser IndexedDB alongside document metadata, so files over 4 MB remain downloadable instead of becoming metadata-only records
+- Upload files to the private Supabase Storage bucket (or browser IndexedDB in local-only mode)
 - Search, meeting / company / type filters, preview for images, PDFs and videos, Blob-based download, rename, delete
-- File contents stay in the browser that uploaded them; shared cloud records contain document metadata only
+- Owners can manage documents; explicitly shared users and participants in the linked meeting can view and download them
 
 **Teams & Users**
 - Team CRUD, department assignment, team lead, members, team details with meetings and action items
@@ -93,7 +93,7 @@ npx skills add supabase/agent-skills
 
 ## Supabase database
 
-The app stores credentials in Supabase Auth and saves private workspace collections in `public.workspace_records`, scoped to `auth.uid()` by RLS; passwords are never copied into workspace records. The `user_directory` view exposes name, email, department, title, role, status, and account creation date to signed-in users, but not phone numbers. New Auth accounts are copied into `public.profiles` by a database trigger. Meetings are shared separately in `public.shared_meetings`; RLS allows the organizer and selected participants to read complete meeting details and linked action items, while only the organizer can change or delete them. Realtime refreshes the Users and Meetings pages when those records change.
+The app stores credentials in Supabase Auth and saves workspace collections in `public.workspace_records`, with row-level ownership and explicit sharing enforced by RLS; passwords are never copied into workspace records. The `user_directory` view exposes name, email, department, title, role, status, and account creation date to signed-in users, but not phone numbers. New Auth accounts are copied into `public.profiles` by a database trigger. Meetings are shared separately in `public.shared_meetings`; only the organizer and selected participants can read meeting details, and only the organizer can change or delete them. Action items are visible to their creator and assignee; assignees can change status while creators retain management rights. Companies are owner-only unless explicitly shared. Documents are owner-only unless explicitly shared or linked to a meeting, in which case its organizer and participants can view and download the file. The `meeting-documents` bucket is private and uses authenticated owner-scoped paths. Realtime refreshes workspace records when those records change.
 
 Signup lets users enter a role as text. Entering `Admin` (case-insensitive) claims an Admin role only while fewer than three Admin accounts exist; the database serializes role assignment and prevents a fourth Admin, including concurrent signups. Because this is public signup, anyone who reaches the form while a slot is available can claim one. Existing non-admin accounts cannot promote themselves to Admin in Profile settings; an existing Admin can assign Admin through the Users page. The server verifies the caller's current `profiles.role`, and the database prevents removal or deactivation of the last active Admin. Admin privileges apply consistently to account management, companies, meetings, and meeting action items. Role values are limited to 80 characters and can be edited in Profile settings.
 
@@ -103,9 +103,10 @@ supabase functions deploy manage-workspace-user
 supabase functions deploy signup-role-options
 ```
 
-The linked Supabase project has been updated with the nullable free-form role schema, the three-Admin database guard, Admin RLS policies, and the role-management and signup-availability Edge Functions. Its migration history still has local/remote gaps; review the pending migration list before applying changes and do not run a broad `db push` without reconciling those gaps.
+The linked Supabase project has previously been updated with the nullable free-form role schema, the three-Admin database guard, and the role-management and signup-availability Edge Functions. Its migration history still has local/remote gaps; review the pending migration list before applying changes and do not run a broad `db push` without reconciling those gaps.
+If meeting deletion reports that `public.delete_workspace_meeting(p_meeting_id)` is missing from the schema cache, apply `supabase/migrations/20261017082630_ensure_meeting_delete_rpc.sql` to the linked database and reload the PostgREST schema cache. This function runs as the caller and deletes only that caller's meeting records.
 
-RLS remains enabled on exposed tables. Existing ownership and participant policies are retained, with additional Admin-only policies granting active Admins access to company, meeting, and meeting-action-item records plus shared meetings. Personal documents, settings, notifications, and unrelated workspace collections remain owner-scoped. Do not disable RLS to implement administrator access. Admin role changes are validated by the authenticated management function and enforced by a database trigger; public signups may claim one of the first three Admin roles, and the database prevents a fourth. Existing non-admins cannot promote themselves through Profile settings. All signed-in active users can view the directory, while profile role changes are performed server-side. Demo fixture IDs are cleaned selectively; registered Auth accounts and unrelated workspace data are not removed.
+The per-user data-access migration removes permissive legacy policies and applies owner, creator, assignee, and meeting-participant checks to both normalized tables and `workspace_records`. Admin status does not grant access to another user's meetings, tasks, documents, or companies. RLS must remain enabled; service-role credentials must never be exposed to the client. All signed-in active users can view the directory, while profile role changes are performed server-side. Demo fixture IDs are cleaned selectively; registered Auth accounts and unrelated workspace data are not removed.
 
 ## Gmail meeting invitations
 
@@ -187,7 +188,7 @@ src/
 | `avdynamics_teams` | `[{ id, name, department, leadId, memberIds[], status, description, createdAt }]` |
 | `avdynamics_meetings` | `[{ id, ref, title, companyId, companyName, department, date, startTime, type, status, responsibleId, createdBy, agenda, notes, decisions, actionItemsText, remarks, participants[{ userId, type }], createdAt }] — `companyName` is only set when the company was typed in manually; older meetings may still carry `teamId`, `endTime`, `location`, `link`, `aiSummary`, `recordingUrl` (kept, no longer shown)` |
 | `avdynamics_action_items` | `[{ id, title, description, status, priority, dueDate, assigneeId, meetingId, companyId, createdAt }]` |
-| `avdynamics_documents` | `[{ id, name, type, size, meetingId, companyId, uploadedBy, fileKey?, dataUrl?, createdAt }]` (`fileKey` points to a browser IndexedDB file; `dataUrl` is retained for older records) |
+| `avdynamics_documents` | `[{ id, name, type, size, meetingId, companyId, uploadedBy, fileKey?, dataUrl?, createdAt }]` (`fileKey` points to a private Supabase Storage object when configured, or browser IndexedDB in local-only mode; `dataUrl` is retained for older records) |
 | `avdynamics_notifications` | `[{ id, type, title, message, link, read, createdAt }]` |
 | `avdynamics_settings` | `{ notifications, automation, channels, templates[], auth, profile }` |
 | `avdynamics_activity` | `[{ id, type, message, entityId, actorId, createdAt }]` |

@@ -45,7 +45,8 @@ const EditMeeting = () => {
   if (!meeting || !initial) {
     return <ErrorState title="Meeting not found" description="This meeting may have been deleted." onRetry={() => navigate('/meetings')} />
   }
-  if (meeting.workspaceShared && meeting.sharedOwnerId !== user?.id && user?.role !== 'Admin') {
+  const meetingOwnerId = meeting.workspaceOwnerId || meeting.sharedOwnerId
+  if ((meetingOwnerId && meetingOwnerId !== user?.id) || (!meetingOwnerId && meeting.workspaceShared)) {
     return (
       <ErrorState
         title="This meeting is read-only"

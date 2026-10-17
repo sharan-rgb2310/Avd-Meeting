@@ -109,6 +109,7 @@ const ActionItems = () => {
           meetings={meetings}
           companies={companies}
           users={users}
+          currentUserId={user?.id}
           onCreate={() => { setEditing(null); setFormOpen(true) }}
           onEdit={(item) => { setEditing(item); setFormOpen(true) }}
           onDelete={(item) => setPendingDelete(item)}

@@ -52,6 +52,7 @@ const Documents = () => {
   const meetingTitle = (id) => meetings.find((m) => m.id === id)?.title || '—'
   const companyName = (id) => companies.find((c) => c.id === id)?.name || '—'
   const uploaderName = (id) => users.find((u) => u.id === id)?.name || 'Unknown'
+  const canManageDocument = (doc) => !doc.workspaceOwnerId || doc.workspaceOwnerId === user?.id
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -192,13 +193,17 @@ const Documents = () => {
               <DropdownItem icon={Download} onClick={() => { close(); download(row) }}>
                 Download
               </DropdownItem>
-              <DropdownItem icon={Edit} onClick={() => { close(); setRenaming(row); setRenameValue(row.name) }}>
-                Rename
-              </DropdownItem>
-              <DropdownDivider />
-              <DropdownItem icon={Trash2} tone="danger" onClick={() => { close(); setPendingDelete(row) }}>
-                Delete
-              </DropdownItem>
+              {canManageDocument(row) && (
+                <>
+                  <DropdownItem icon={Edit} onClick={() => { close(); setRenaming(row); setRenameValue(row.name) }}>
+                    Rename
+                  </DropdownItem>
+                  <DropdownDivider />
+                  <DropdownItem icon={Trash2} tone="danger" onClick={() => { close(); setPendingDelete(row) }}>
+                    Delete
+                  </DropdownItem>
+                </>
+              )}
             </>
           )}
         </Dropdown>

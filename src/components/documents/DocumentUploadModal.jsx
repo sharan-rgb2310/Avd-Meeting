@@ -49,7 +49,7 @@ const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies
     setValues((v) => ({ ...v, name: file.name, type: documentTypeFor(file.name), size: file.size }))
     setErrors((prev) => ({ ...prev, name: undefined }))
     setNotice(supabase
-      ? 'File will be stored in the shared workspace for all users.'
+      ? 'File access is limited to you and users who can access its linked meeting.'
       : 'File will be stored in this browser and available to preview and download here.')
   }
 
@@ -72,7 +72,7 @@ const DocumentUploadModal = ({ open, onClose, onSubmit, meetings = [], companies
       onClose={onClose}
       title="Upload document"
       description={supabase
-        ? 'Attach a file to a meeting and share it with your workspace.'
+        ? 'Attach a file to a meeting and share it only with its participants.'
         : 'Attach a file to a meeting. Files stay in this browser.'}
       footer={
         <>

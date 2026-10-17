@@ -13,8 +13,9 @@ const COLUMN_STYLES = {
   Done: { header: 'text-emerald-700', chip: 'bg-emerald-50 text-emerald-700', bar: 'bg-success' },
 }
 
-const ActionCard = ({ item, meeting, company, assignee, onEdit, onDelete, onMove, onAssign, draggable, onDragStart }) => {
+const ActionCard = ({ item, meeting, company, assignee, currentUserId, onEdit, onDelete, onMove, onAssign, draggable, onDragStart }) => {
   const overdue = item.status !== 'Done' && item.dueDate < todayKey()
+  const canManage = !item.workspaceOwnerId || item.workspaceOwnerId === currentUserId
   return (
     <article
       draggable={draggable}
@@ -23,28 +24,30 @@ const ActionCard = ({ item, meeting, company, assignee, onEdit, onDelete, onMove
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-[13px] font-medium leading-snug text-ink">{item.title}</h3>
-        <Dropdown
-          trigger={({ toggle }) => (
-            <button type="button" onClick={toggle} aria-label={`Actions for ${item.title}`} className="rounded-lg p-1 text-muted hover:bg-slate-100 hover:text-ink">
-              <MoreHorizontal size={15} />
-            </button>
-          )}
-        >
-          {({ close }) => (
-            <>
-              <DropdownItem icon={Edit} onClick={() => { close(); onEdit(item) }}>
-                Edit item
-              </DropdownItem>
-              <DropdownItem icon={UserCheck} onClick={() => { close(); onAssign(item) }}>
-                Reassign
-              </DropdownItem>
-              <DropdownDivider />
-              <DropdownItem icon={Trash2} tone="danger" onClick={() => { close(); onDelete(item) }}>
-                Delete item
-              </DropdownItem>
-            </>
-          )}
-        </Dropdown>
+        {canManage && (
+          <Dropdown
+            trigger={({ toggle }) => (
+              <button type="button" onClick={toggle} aria-label={`Actions for ${item.title}`} className="rounded-lg p-1 text-muted hover:bg-slate-100 hover:text-ink">
+                <MoreHorizontal size={15} />
+              </button>
+            )}
+          >
+            {({ close }) => (
+              <>
+                <DropdownItem icon={Edit} onClick={() => { close(); onEdit(item) }}>
+                  Edit item
+                </DropdownItem>
+                <DropdownItem icon={UserCheck} onClick={() => { close(); onAssign(item) }}>
+                  Reassign
+                </DropdownItem>
+                <DropdownDivider />
+                <DropdownItem icon={Trash2} tone="danger" onClick={() => { close(); onDelete(item) }}>
+                  Delete item
+                </DropdownItem>
+              </>
+            )}
+          </Dropdown>
+        )}
       </div>
 
       {item.description && <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted">{item.description}</p>}
@@ -81,7 +84,7 @@ const ActionCard = ({ item, meeting, company, assignee, onEdit, onDelete, onMove
   )
 }
 
-const KanbanBoard = ({ items, meetings, companies, users, onEdit, onDelete, onMove, onAssign, onCreate }) => {
+const KanbanBoard = ({ items, meetings, companies, users, currentUserId, onEdit, onDelete, onMove, onAssign, onCreate }) => {
   const byId = (list, id) => list.find((x) => x.id === id)
 
   const handleDrop = (e, status) => {
@@ -129,6 +132,7 @@ const KanbanBoard = ({ items, meetings, companies, users, onEdit, onDelete, onMo
                     meeting={byId(meetings, item.meetingId)}
                     company={byId(companies, item.companyId)}
                     assignee={byId(users, item.assigneeId)}
+                    currentUserId={currentUserId}
                     onEdit={onEdit}
                     onDelete={onDelete}
                     onMove={onMove}

@@ -158,13 +158,28 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
     const previous = previousRows.get(`${row.owner_id}:${row.record_id}`)
     return !previous || stableJson(previous.data) !== stableJson(row.data)
   })
-  if (changedRows.length) {
+  const ownedRows = changedRows.filter((row) => row.owner_id === ownerId)
+  const collaboratorRows = changedRows.filter((row) => row.owner_id !== ownerId)
+  if (ownedRows.length) {
     const { error } = await supabase
       .from('workspace_records')
-      .upsert(changedRows.map((row) => ({ ...row, updated_at: new Date().toISOString() })), {
+      .upsert(ownedRows.map((row) => ({ ...row, updated_at: new Date().toISOString() })), {
         onConflict: 'owner_id,collection,record_id',
       })
     if (error) throw error
+  }
+  for (const row of collaboratorRows) {
+    const { data, error } = await supabase
+      .from('workspace_records')
+      .update({ data: row.data, updated_at: new Date().toISOString() })
+      .eq('owner_id', row.owner_id)
+      .eq('collection', row.collection)
+      .eq('record_id', row.record_id)
+      .select('record_id')
+    if (error) throw error
+    if (!data?.length) {
+      throw new Error(`Workspace record ${row.record_id} could not be updated with this account's permissions.`)
+    }
   }
 
   const nextKeys = new Set(rows.map((row) => `${row.owner_id}:${row.record_id}`))
@@ -177,13 +192,17 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
     removedByOwner.set(row.owner_id, ownerRows)
   }
   for (const [recordOwnerId, recordIds] of removedByOwner) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('workspace_records')
       .delete()
       .eq('owner_id', recordOwnerId)
       .eq('collection', collection)
       .in('record_id', recordIds)
+      .select('record_id')
     if (error) throw error
+    if ((data || []).length !== recordIds.length) {
+      throw new Error('One or more workspace records could not be deleted with this account’s permissions.')
+    }
   }
 
   if (key === KEYS.teams) {
@@ -343,9 +362,39 @@ export const deleteWorkspaceMeeting = async (meetingId) => {
   const currentDelete = previousWrite
     .catch(() => {})
     .then(async () => {
-      const { data, error } = await supabase.rpc('delete_workspace_meeting', {
+      let { data, error } = await supabase.rpc('delete_workspace_meeting', {
         p_meeting_id: id,
       })
+      if (
+        error?.code === 'PGRST202'
+        || error?.message?.includes('Could not find the function public.delete_workspace_meeting')
+      ) {
+        const [
+          { data: deletedMeetings, error: meetingDeleteError },
+          { data: deletedRecords, error: recordDeleteError },
+        ] = await Promise.all([
+          supabase
+            .from('shared_meetings')
+            .delete()
+            .eq('id', id)
+            .eq('owner_id', ownerId)
+            .select('id'),
+          supabase
+            .from('workspace_records')
+            .delete()
+            .eq('record_id', id)
+            .eq('collection', 'meetings')
+            .eq('owner_id', ownerId)
+            .select('record_id'),
+        ])
+        if (meetingDeleteError) throw meetingDeleteError
+        if (recordDeleteError) throw recordDeleteError
+        if (!deletedMeetings?.length && !deletedRecords?.length) {
+          throw new Error('Meeting was not found or cannot be deleted by this account.')
+        }
+        data = true
+        error = null
+      }
       if (error) throw error
       if (data !== true) throw new Error('Supabase did not confirm that the meeting was deleted.')
 
