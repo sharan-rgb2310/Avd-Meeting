@@ -65,6 +65,7 @@ const CompanyDetails = () => {
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   const openActions = useMemo(() => actionItems.filter((a) => a.status !== 'Done'), [actionItems])
+  const canManageCompany = !company?.workspaceOwnerId || company.workspaceOwnerId === user?.id
 
   if (loading) return <LoadingSkeleton rows={6} />
   if (!company) {
@@ -96,18 +97,22 @@ const CompanyDetails = () => {
         }
         actions={
           <>
-            <Button variant="secondary" icon={Edit} onClick={() => setEditOpen(true)}>
-              Edit
-            </Button>
+            {canManageCompany && (
+              <Button variant="secondary" icon={Edit} onClick={() => setEditOpen(true)}>
+                Edit
+              </Button>
+            )}
             <Button variant="secondary" icon={CheckSquare} onClick={() => setActionOpen(true)}>
               Create action item
             </Button>
             <Button icon={Plus} onClick={() => navigate(`/meetings/create?companyId=${company.id}`)}>
               Create meeting
             </Button>
-            <Button variant="dangerSoft" icon={Trash2} onClick={() => setDeleteOpen(true)}>
-              Delete
-            </Button>
+            {canManageCompany && (
+              <Button variant="dangerSoft" icon={Trash2} onClick={() => setDeleteOpen(true)}>
+                Delete
+              </Button>
+            )}
           </>
         }
       />

@@ -47,10 +47,8 @@ export const getDocumentFile = async (id) => {
   if (!supabase) return getLocalFile(id)
 
   const { data, error } = await supabase.storage.from('meeting-documents').download(id)
-  if (!error) return data
-  const localFile = await getLocalFile(id)
-  if (localFile) return localFile
-  throw error
+  if (error) throw error
+  return data
 }
 
 const removeFile = async (id) => {
@@ -85,9 +83,14 @@ export const getDocument = (id) => findItem(KEYS.documents, id)
 
 export const createDocument = async (values, actorName = 'Someone') => {
   const id = uid('doc')
+  let fileKey = id
   if (values.file) {
     if (supabase) {
-      const { error } = await supabase.storage.from('meeting-documents').upload(id, values.file, {
+      const { data, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      if (!data.user) throw new Error('Sign in again before uploading a document.')
+      fileKey = `${data.user.id}/${id}`
+      const { error } = await supabase.storage.from('meeting-documents').upload(fileKey, values.file, {
         contentType: values.file.type || undefined,
         upsert: true,
       })
@@ -103,7 +106,7 @@ export const createDocument = async (values, actorName = 'Someone') => {
     dataUrl: '',
     createdAt: new Date().toISOString(),
     ...metadata,
-    ...(file ? { fileKey: id } : {}),
+    ...(file ? { fileKey } : {}),
   })
   logActivity(`${actorName} uploaded ${doc.name}`, 'document', doc.id, doc.companyId)
   return doc

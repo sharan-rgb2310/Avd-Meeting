@@ -89,7 +89,10 @@ const MeetingDetails = () => {
   const creator = users.find((u) => u.id === meeting?.createdBy)
   const responsible = users.find((u) => u.id === meeting?.responsibleId)
   const userById = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users])
-  const canManageMeeting = !meeting?.workspaceShared || meeting.sharedOwnerId === user?.id
+  const meetingOwnerId = meeting?.workspaceOwnerId || meeting?.sharedOwnerId
+  const canManageMeeting = meetingOwnerId
+    ? meetingOwnerId === user?.id
+    : !meeting?.workspaceShared
   const actionItems = localActionItems
 
   if (loading) return <LoadingSkeleton rows={7} />

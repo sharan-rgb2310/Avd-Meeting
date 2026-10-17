@@ -2,6 +2,7 @@ import { supabase } from '../utils/supabase'
 import { KEYS, getData, setData, withoutRemotePersistence } from './storageService'
 import { defaultSettings } from '../data/seedData'
 import { withoutLegacyDemoRecords, withoutLegacyDemoSettings } from '../data/legacyDemoData'
+import { canUserViewMeeting, canUserViewWorkspaceMeeting } from '../utils/meetingAccess'
 
 const COLLECTIONS = [
   [KEYS.users, 'users'],
@@ -20,6 +21,8 @@ const keyByCollection = new Map(COLLECTIONS.map(([key, collection]) => [collecti
 const pendingWrites = new Map()
 const pendingLoads = new Map()
 const recordSyncs = new Map()
+const deletedMeetingIds = new Map()
+const meetingDeletes = new Map()
 const sharedCollections = new Set(['companies', 'meetings', 'actionItems', 'documents', 'activity'])
 const uniqueBy = (rows, keyFor) => {
   const seen = new Set()
@@ -142,8 +145,12 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
   const collection = collectionByKey.get(key)
   if (!supabase || !collection) return
 
+  const deletedIds = key === KEYS.meetings ? deletedMeetingIds.get(ownerId) : null
+  const persistedValue = deletedIds && Array.isArray(value)
+    ? value.filter((meeting) => !deletedIds.has(String(meeting.id)))
+    : value
   const ownersByRecord = await resolveWorkspaceRecordOwners(ownerId, collection, value, previousValue)
-  const rows = valuesToRows(ownerId, key, value, ownersByRecord)
+  const rows = valuesToRows(ownerId, key, persistedValue, ownersByRecord)
   const previousRows = new Map(
     valuesToRows(ownerId, key, previousValue, ownersByRecord)
       .map((row) => [`${row.owner_id}:${row.record_id}`, row])
@@ -152,13 +159,28 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
     const previous = previousRows.get(`${row.owner_id}:${row.record_id}`)
     return !previous || stableJson(previous.data) !== stableJson(row.data)
   })
-  if (changedRows.length) {
+  const ownedRows = changedRows.filter((row) => row.owner_id === ownerId)
+  const collaboratorRows = changedRows.filter((row) => row.owner_id !== ownerId)
+  if (ownedRows.length) {
     const { error } = await supabase
       .from('workspace_records')
-      .upsert(changedRows.map((row) => ({ ...row, updated_at: new Date().toISOString() })), {
+      .upsert(ownedRows.map((row) => ({ ...row, updated_at: new Date().toISOString() })), {
         onConflict: 'owner_id,collection,record_id',
       })
     if (error) throw error
+  }
+  for (const row of collaboratorRows) {
+    const { data, error } = await supabase
+      .from('workspace_records')
+      .update({ data: row.data, updated_at: new Date().toISOString() })
+      .eq('owner_id', row.owner_id)
+      .eq('collection', row.collection)
+      .eq('record_id', row.record_id)
+      .select('record_id')
+    if (error) throw error
+    if (!data?.length) {
+      throw new Error(`Workspace record ${row.record_id} could not be updated with this account's permissions.`)
+    }
   }
 
   const nextKeys = new Set(rows.map((row) => `${row.owner_id}:${row.record_id}`))
@@ -171,13 +193,17 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
     removedByOwner.set(row.owner_id, ownerRows)
   }
   for (const [recordOwnerId, recordIds] of removedByOwner) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('workspace_records')
       .delete()
       .eq('owner_id', recordOwnerId)
       .eq('collection', collection)
       .in('record_id', recordIds)
+      .select('record_id')
     if (error) throw error
+    if ((data || []).length !== recordIds.length) {
+      throw new Error('One or more workspace records could not be deleted with this account’s permissions.')
+    }
   }
 
   if (key === KEYS.teams) {
@@ -225,8 +251,7 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
   }
 
   if (key === KEYS.meetings || key === KEYS.actionItems) {
-    const meetings = key === KEYS.meetings ? value : getData(KEYS.meetings, [])
-    const actionItems = key === KEYS.actionItems ? value : getData(KEYS.actionItems, [])
+    const meetings = key === KEYS.meetings ? persistedValue : getData(KEYS.meetings, [])
     const sharedRows = uniqueBy(
       sharedMeetingRows(ownerId, meetings),
       (row) => row.id
@@ -313,16 +338,134 @@ export const persistWorkspaceChange = async (key, value, previousValue) => {
   }
 }
 
-const refreshSharedWorkspaceRecords = async () => {
-  const { data, error } = await supabase
-    .from('workspace_records')
-    .select('owner_id, collection, record_id, data')
-    .in('collection', [...sharedCollections])
-    .order('updated_at', { ascending: false })
-  if (error) throw error
+export const deleteWorkspaceMeeting = async (meetingId) => {
+  if (!supabase) return true
 
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError) throw sessionError
+  const ownerId = sessionData.session?.user?.id
+  if (!ownerId) throw new Error('Sign in again before deleting this meeting.')
+
+  const id = String(meetingId)
+  const deleteKey = `${ownerId}:${id}`
+  const existingDelete = meetingDeletes.get(deleteKey)
+  if (existingDelete) return existingDelete
+
+  let tombstones = deletedMeetingIds.get(ownerId)
+  if (!tombstones) {
+    tombstones = new Set()
+    deletedMeetingIds.set(ownerId, tombstones)
+  }
+  tombstones.add(id)
+
+  const queueKey = `${ownerId}:${KEYS.meetings}`
+  const previousWrite = pendingWrites.get(queueKey) || Promise.resolve()
+  const currentDelete = previousWrite
+    .catch(() => {})
+    .then(async () => {
+      let { data, error } = await supabase.rpc('delete_workspace_meeting', {
+        p_meeting_id: id,
+      })
+      if (
+        error?.code === 'PGRST202'
+        || error?.message?.includes('Could not find the function public.delete_workspace_meeting')
+      ) {
+        const [
+          { data: deletedMeetings, error: meetingDeleteError },
+          { data: deletedRecords, error: recordDeleteError },
+        ] = await Promise.all([
+          supabase
+            .from('shared_meetings')
+            .delete()
+            .eq('id', id)
+            .eq('owner_id', ownerId)
+            .select('id'),
+          supabase
+            .from('workspace_records')
+            .delete()
+            .eq('record_id', id)
+            .eq('collection', 'meetings')
+            .eq('owner_id', ownerId)
+            .select('record_id'),
+        ])
+        if (meetingDeleteError) throw meetingDeleteError
+        if (recordDeleteError) throw recordDeleteError
+        if (!deletedMeetings?.length && !deletedRecords?.length) {
+          throw new Error('Meeting was not found or cannot be deleted by this account.')
+        }
+        data = true
+        error = null
+      }
+      if (error) throw error
+      if (data !== true) throw new Error('Supabase did not confirm that the meeting was deleted.')
+
+      const [{ data: remainingMeetings, error: meetingError }, { data: remainingRecords, error: recordError }] = await Promise.all([
+        supabase
+          .from('shared_meetings')
+          .select('id')
+          .eq('id', id)
+          .eq('owner_id', ownerId),
+        supabase
+          .from('workspace_records')
+          .select('record_id')
+          .eq('record_id', id)
+          .eq('collection', 'meetings')
+          .eq('owner_id', ownerId),
+      ])
+      if (meetingError) throw meetingError
+      if (recordError) throw recordError
+      if (remainingMeetings?.length || remainingRecords?.length) {
+        throw new Error('Supabase still has a copy of this meeting after deletion.')
+      }
+      return true
+    })
+
+  meetingDeletes.set(deleteKey, currentDelete)
+  pendingWrites.set(queueKey, currentDelete)
+  try {
+    return await currentDelete
+  } catch (error) {
+    tombstones.delete(id)
+    if (tombstones.size === 0) deletedMeetingIds.delete(ownerId)
+    throw error
+  } finally {
+    if (meetingDeletes.get(deleteKey) === currentDelete) meetingDeletes.delete(deleteKey)
+    if (pendingWrites.get(queueKey) === currentDelete) pendingWrites.delete(queueKey)
+  }
+}
+
+export const isMeetingPendingDeletion = (ownerId, meetingId) =>
+  deletedMeetingIds.get(ownerId)?.has(String(meetingId)) || false
+
+const refreshSharedWorkspaceRecords = async (authUserId) => {
+  const [{ data, error }, { data: sharedMeetings, error: sharedMeetingsError }] = await Promise.all([
+    supabase
+      .from('workspace_records')
+      .select('owner_id, collection, record_id, data')
+      .in('collection', [...sharedCollections])
+      .order('updated_at', { ascending: false }),
+    supabase.from('shared_meetings').select('id, owner_id, participant_ids, data'),
+  ])
+  if (error) throw error
+  if (sharedMeetingsError) throw sharedMeetingsError
+
+  const visibleMeetings = new Map(
+    (sharedMeetings || [])
+      .filter((meeting) => canUserViewMeeting({
+        ...meeting.data,
+        owner_id: meeting.owner_id,
+        participant_ids: meeting.participant_ids,
+      }, authUserId))
+      .map((meeting) => [String(meeting.id), meeting])
+  )
   const rowsByCollection = new Map()
   for (const row of data || []) {
+    if (
+      row.collection === 'meetings'
+      && !canUserViewWorkspaceMeeting(row, authUserId)
+      && !visibleMeetings.has(String(row.record_id))
+    ) continue
+    if (row.collection === 'meetings' && isMeetingPendingDeletion(authUserId, row.record_id)) continue
     const rows = rowsByCollection.get(row.collection) || []
     const key = keyByCollection.get(row.collection)
     rows.push({
@@ -338,9 +481,13 @@ const refreshSharedWorkspaceRecords = async () => {
   const remoteMeetingIds = new Set(
     getData(KEYS.remoteMeetingIds, []).map((id) => String(id))
   )
+  const liveSharedMeetingIds = new Set((sharedMeetings || []).map((meeting) => String(meeting.id)))
   const sharedMeetingsWithoutWorkspaceRows = getData(KEYS.meetings, []).filter((meeting) =>
     meeting.workspaceShared &&
+    canUserViewMeeting(meeting, authUserId) &&
     remoteMeetingIds.has(String(meeting.id)) &&
+    visibleMeetings.has(String(meeting.id)) &&
+    !isMeetingPendingDeletion(authUserId, meeting.id) &&
     !workspaceMeetingIds.has(String(meeting.id))
   )
   if (sharedMeetingsWithoutWorkspaceRows.length) {
@@ -350,6 +497,7 @@ const refreshSharedWorkspaceRecords = async () => {
     ])
   }
 
+  if (recordSyncs.get(authUserId)?.needsRefresh) return
   withoutRemotePersistence(() => {
     for (const collection of sharedCollections) {
       const key = keyByCollection.get(collection)
@@ -372,7 +520,7 @@ export const syncSharedWorkspaceRecords = (authUser) => {
   state.promise = (async () => {
     do {
       state.needsRefresh = false
-      await refreshSharedWorkspaceRecords()
+      await refreshSharedWorkspaceRecords(authUser.id)
     } while (state.needsRefresh)
   })().finally(() => {
     if (recordSyncs.get(authUser.id) === state) recordSyncs.delete(authUser.id)
@@ -424,6 +572,10 @@ const loadWorkspace = async (authUser) => {
 
   const rowsByCollection = new Map()
   for (const row of records || []) {
+    if (
+      row.collection === 'meetings'
+      && !canUserViewWorkspaceMeeting(row, authUser.id)
+    ) continue
     const current = rowsByCollection.get(row.collection) || []
     current.push(row)
     rowsByCollection.set(row.collection, current)

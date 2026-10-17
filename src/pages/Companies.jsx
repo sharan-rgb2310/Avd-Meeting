@@ -20,12 +20,14 @@ import useStore from '../hooks/useStore'
 import useLoading from '../hooks/useLoading'
 import usePagination from '../hooks/usePagination'
 import { useToast } from '../context/ToastContext'
+import { useAuth } from '../context/AuthContext'
 import { COMPANY_STATUSES, INDUSTRIES } from '../data/seedData'
 import { sortBy } from '../utils/format'
 
 const Companies = () => {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { user } = useAuth()
   const loading = useLoading(360)
 
   const [companies] = useStore(() => getData(KEYS.companies, []))
@@ -56,6 +58,8 @@ const Companies = () => {
 
   const meetingCount = (id) => meetings.filter((m) => m.companyId === id).length
   const openActions = (id) => actionItems.filter((a) => a.companyId === id && a.status !== 'Done').length
+  const canManageCompany = (company) =>
+    !company.workspaceOwnerId || company.workspaceOwnerId === user?.id
 
   const save = (values) => {
     if (editing) {
@@ -129,13 +133,17 @@ const Companies = () => {
               <DropdownItem icon={Eye} onClick={() => { close(); navigate(`/companies/${row.id}`) }}>
                 View details
               </DropdownItem>
-              <DropdownItem icon={Edit} onClick={() => { close(); setEditing(row); setFormOpen(true) }}>
-                Edit company
-              </DropdownItem>
-              <DropdownDivider />
-              <DropdownItem icon={Trash2} tone="danger" onClick={() => { close(); setPendingDelete(row) }}>
-                Delete company
-              </DropdownItem>
+              {canManageCompany(row) && (
+                <>
+                  <DropdownItem icon={Edit} onClick={() => { close(); setEditing(row); setFormOpen(true) }}>
+                    Edit company
+                  </DropdownItem>
+                  <DropdownDivider />
+                  <DropdownItem icon={Trash2} tone="danger" onClick={() => { close(); setPendingDelete(row) }}>
+                    Delete company
+                  </DropdownItem>
+                </>
+              )}
             </div>
           )}
         </Dropdown>

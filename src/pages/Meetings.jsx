@@ -70,6 +70,10 @@ const Meetings = () => {
 
   const companyName = (m) => meetingCompanyName(m, companies) || '—'
   const personName = (id) => userName(id, users) || '—'
+  const canManageMeeting = (meeting) => {
+    const ownerId = meeting.workspaceOwnerId || meeting.sharedOwnerId
+    return ownerId ? ownerId === user?.id : !meeting.workspaceShared
+  }
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -169,7 +173,7 @@ const Meetings = () => {
               <DropdownItem icon={Eye} onClick={() => { close(); navigate(`/meetings/${row.id}`) }}>
                 View meeting
               </DropdownItem>
-              {(!row.workspaceShared || row.sharedOwnerId === user?.id || user?.role === 'Admin') && (
+              {canManageMeeting(row) && (
                 <>
                   <DropdownItem icon={Edit} onClick={() => { close(); navigate(`/meetings/${row.id}/edit`) }}>
                     Edit meeting
@@ -264,7 +268,7 @@ const Meetings = () => {
           selected={selected}
           onSelectChange={(ids) => setSelected(ids.filter((id) => {
             const meeting = meetings.find((entry) => entry.id === id)
-            return !meeting?.workspaceShared || meeting.sharedOwnerId === user?.id || user?.role === 'Admin'
+            return meeting && canManageMeeting(meeting)
           }))}
           sort={sort}
           onSortChange={setSort}
