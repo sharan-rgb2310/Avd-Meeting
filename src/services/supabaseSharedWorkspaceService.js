@@ -80,14 +80,14 @@ export const syncSharedTeams = (authUser) => {
   const syncing = (async () => {
     const { data, error } = await supabase
       .from('shared_teams')
-      .select('id, data, created_by, created_at, updated_at')
+      .select('id, data, created_at, updated_at')
       .order('created_at', { ascending: false })
     if (error) throw error
 
     const remoteTeams = (data || []).map((row) => ({
       ...row.data,
       id: row.id,
-      createdBy: row.created_by || '',
+      createdBy: row.data.createdBy || '',
       workspaceShared: true,
     }))
     const remoteIds = new Set(remoteTeams.map((team) => String(team.id)))
