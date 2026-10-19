@@ -600,15 +600,17 @@ const loadWorkspace = async (authUser) => {
   }
 
   const previousOwner = getData(KEYS.cloudOwner, null)
-  const shouldImportLocal = (records || []).length === 0 && (!previousOwner || previousOwner === authUser.id)
+  const shouldImportLocal = (records || []).length === 0 && !previousOwner
   const values = {}
 
   for (const [key, collection] of COLLECTIONS) {
     if (shouldImportLocal) {
       const localValue = getData(key, key === KEYS.settings ? defaultSettings : [])
-      values[key] = Array.isArray(localValue)
-        ? withoutLegacyDemoRecords(key, localValue).map((record) => sanitizeRecord(key, record))
-        : withoutLegacyDemoSettings(localValue)
+      values[key] = key === KEYS.teams || key === KEYS.actionItems
+        ? []
+        : Array.isArray(localValue)
+          ? withoutLegacyDemoRecords(key, localValue).map((record) => sanitizeRecord(key, record))
+          : withoutLegacyDemoSettings(localValue)
       continue
     }
 
