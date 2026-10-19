@@ -90,13 +90,9 @@ export const syncSharedTeams = (authUser) => {
       createdBy: row.data.createdBy || '',
       workspaceShared: true,
     }))
-    const remoteIds = new Set(remoteTeams.map((team) => String(team.id)))
-    const localTeams = getData(KEYS.teams, []).filter(
-      (team) => !team.workspaceShared && !remoteIds.has(String(team.id))
-    )
 
     withoutRemotePersistence(() => {
-      setData(KEYS.teams, [...remoteTeams, ...localTeams])
+      setData(KEYS.teams, remoteTeams)
     })
     return remoteTeams
   })().finally(() => {
