@@ -224,6 +224,7 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
         .map((team) => ({
           id: String(team.id),
           data: teamData(team),
+          created_by: team.createdBy || null,
           created_at: team.createdAt || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })),
@@ -231,10 +232,28 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
     )
 
     if (rowsToSave.length) {
-      const { error } = await supabase
-        .from('shared_teams')
-        .upsert(rowsToSave, { onConflict: 'id' })
-      if (error) throw error
+      const previousIds = new Set(previousTeams.map((team) => String(team.id)))
+      const rowsToUpdate = rowsToSave.filter((row) => previousIds.has(row.id))
+      const rowsToInsert = rowsToSave.filter((row) => !previousIds.has(row.id))
+
+      for (const row of rowsToUpdate) {
+        const { data, error } = await supabase
+          .from('shared_teams')
+          .update({ data: row.data, updated_at: row.updated_at })
+          .eq('id', row.id)
+          .select('id')
+        if (error) throw error
+        if (!data?.length) {
+          throw new Error(`Team ${row.id} could not be updated with this account's permissions.`)
+        }
+      }
+
+      if (rowsToInsert.length) {
+        const { error } = await supabase
+          .from('shared_teams')
+          .insert(rowsToInsert)
+        if (error) throw error
+      }
     }
 
     const nextIds = new Set(teams.filter((team) => team?.id != null).map((team) => String(team.id)))
