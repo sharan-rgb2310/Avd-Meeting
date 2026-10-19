@@ -162,6 +162,7 @@ const Teams = () => {
           } else {
             createTeam({
               ...values,
+              createdBy: user?.id || '',
               memberIds: Array.from(new Set([...(values.memberIds || []), user?.id].filter(Boolean))),
             })
             toast('Team created.')

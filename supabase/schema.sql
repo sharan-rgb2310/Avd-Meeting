@@ -36,6 +36,7 @@ $$;
 create table if not exists public.shared_teams (
   id text primary key,
   data jsonb not null check (jsonb_typeof(data) = 'object'),
+  created_by text references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -132,6 +133,7 @@ create table if not exists public.teams (
   name text not null,
   department text,
   lead_id text references public.profiles(id) on delete set null,
+  created_by text references public.profiles(id) on delete set null,
   status text not null default 'Active',
   description text,
   created_at timestamptz not null default now(),
@@ -921,6 +923,29 @@ create policy "Workspace collaborators read authorized records"
         and (
           owner_id = (select auth.uid())
           or data ->> 'assigneeId' = (select auth.uid())::text
+          or exists (
+            select 1
+            from public.shared_meetings as meeting
+            where meeting.id = workspace_records.data ->> 'meetingId'
+              and (
+                meeting.owner_id = (select auth.uid())
+                or (select auth.uid())::text = any(meeting.participant_ids)
+              )
+          )
+          or exists (
+            select 1
+            from public.meetings as meeting
+            where meeting.id = workspace_records.data ->> 'meetingId'
+              and (
+                meeting.created_by = (select auth.uid())::text
+                or exists (
+                  select 1
+                  from public.meeting_participants as participant
+                  where participant.meeting_id = meeting.id
+                    and participant.user_id = (select auth.uid())::text
+                )
+              )
+          )
         )
       )
     )
@@ -1015,8 +1040,11 @@ create policy "Team members read shared teams"
   to authenticated
   using (
     (select private.is_active_workspace_user())
-    and coalesce(data -> 'memberIds', '[]'::jsonb)
-      @> jsonb_build_array((select auth.uid())::text)
+    and (
+      created_by = (select auth.uid())::text
+      or coalesce(data -> 'memberIds', '[]'::jsonb)
+        @> jsonb_build_array((select auth.uid())::text)
+    )
   );
 
 create policy "Team members create shared teams"
@@ -1025,8 +1053,7 @@ create policy "Team members create shared teams"
   to authenticated
   with check (
     (select private.is_active_workspace_user())
-    and coalesce(data -> 'memberIds', '[]'::jsonb)
-      @> jsonb_build_array((select auth.uid())::text)
+    and created_by = (select auth.uid())::text
   );
 
 create policy "Team members update shared teams"
@@ -1035,8 +1062,11 @@ create policy "Team members update shared teams"
   to authenticated
   using (
     (select private.is_active_workspace_user())
-    and coalesce(data -> 'memberIds', '[]'::jsonb)
-      @> jsonb_build_array((select auth.uid())::text)
+    and (
+      created_by = (select auth.uid())::text
+      or coalesce(data -> 'memberIds', '[]'::jsonb)
+        @> jsonb_build_array((select auth.uid())::text)
+    )
   )
   with check ((select private.is_active_workspace_user()));
 
@@ -1046,8 +1076,11 @@ create policy "Team members delete shared teams"
   to authenticated
   using (
     (select private.is_active_workspace_user())
-    and coalesce(data -> 'memberIds', '[]'::jsonb)
-      @> jsonb_build_array((select auth.uid())::text)
+    and (
+      created_by = (select auth.uid())::text
+      or coalesce(data -> 'memberIds', '[]'::jsonb)
+        @> jsonb_build_array((select auth.uid())::text)
+    )
   );
 
 create policy "Meeting creators and participants read meetings"
@@ -1129,6 +1162,29 @@ create policy "Creators and assignees read action items"
     and (
       created_by = (select auth.uid())::text
       or assignee_id = (select auth.uid())::text
+      or exists (
+        select 1
+        from public.shared_meetings as meeting
+        where meeting.id = action_items.meeting_id
+          and (
+            meeting.owner_id = (select auth.uid())
+            or (select auth.uid())::text = any(meeting.participant_ids)
+          )
+      )
+      or exists (
+        select 1
+        from public.meetings as meeting
+        where meeting.id = action_items.meeting_id
+          and (
+            meeting.created_by = (select auth.uid())::text
+            or exists (
+              select 1
+              from public.meeting_participants as participant
+              where participant.meeting_id = meeting.id
+                and participant.user_id = (select auth.uid())::text
+            )
+          )
+      )
     )
   );
 
@@ -1174,7 +1230,10 @@ create policy "Team members read teams"
   to authenticated
   using (
     (select private.is_active_workspace_user())
-    and (select auth.uid())::text = any(member_ids)
+    and (
+      created_by = (select auth.uid())::text
+      or member_ids @> array[(select auth.uid())::text]
+    )
   );
 
 create policy "Team members create teams"
@@ -1183,7 +1242,7 @@ create policy "Team members create teams"
   to authenticated
   with check (
     (select private.is_active_workspace_user())
-    and (select auth.uid())::text = any(member_ids)
+    and created_by = (select auth.uid())::text
   );
 
 create policy "Team members update teams"
@@ -1192,7 +1251,10 @@ create policy "Team members update teams"
   to authenticated
   using (
     (select private.is_active_workspace_user())
-    and (select auth.uid())::text = any(member_ids)
+    and (
+      created_by = (select auth.uid())::text
+      or member_ids @> array[(select auth.uid())::text]
+    )
   )
   with check ((select private.is_active_workspace_user()));
 
@@ -1202,7 +1264,10 @@ create policy "Team members delete teams"
   to authenticated
   using (
     (select private.is_active_workspace_user())
-    and (select auth.uid())::text = any(member_ids)
+    and (
+      created_by = (select auth.uid())::text
+      or member_ids @> array[(select auth.uid())::text]
+    )
   );
 
 insert into public.workspace_records (owner_id, collection, record_id, data, updated_at)
@@ -1417,7 +1482,33 @@ create policy "Workspace collaborators read authorized records"
       )
       or (
         collection = 'actionItems'
-        and data ->> 'assigneeId' = (select auth.uid())::text
+        and (
+          owner_id = (select auth.uid())
+          or data ->> 'assigneeId' = (select auth.uid())::text
+          or exists (
+            select 1
+            from public.shared_meetings as meeting
+            where meeting.id = workspace_records.data ->> 'meetingId'
+              and (
+                meeting.owner_id = (select auth.uid())
+                or (select auth.uid())::text = any(meeting.participant_ids)
+              )
+          )
+          or exists (
+            select 1
+            from public.meetings as meeting
+            where meeting.id = workspace_records.data ->> 'meetingId'
+              and (
+                meeting.created_by = (select auth.uid())::text
+                or exists (
+                  select 1
+                  from public.meeting_participants as participant
+                  where participant.meeting_id = meeting.id
+                    and participant.user_id = (select auth.uid())::text
+                )
+              )
+          )
+        )
       )
       or (
         collection = 'companies'
@@ -1611,6 +1702,29 @@ create policy "Creators and assignees read action items"
     and (
       created_by = (select auth.uid())::text
       or assignee_id = (select auth.uid())::text
+      or exists (
+        select 1
+        from public.shared_meetings as meeting
+        where meeting.id = action_items.meeting_id
+          and (
+            meeting.owner_id = (select auth.uid())
+            or (select auth.uid())::text = any(meeting.participant_ids)
+          )
+      )
+      or exists (
+        select 1
+        from public.meetings as meeting
+        where meeting.id = action_items.meeting_id
+          and (
+            meeting.created_by = (select auth.uid())::text
+            or exists (
+              select 1
+              from public.meeting_participants as participant
+              where participant.meeting_id = meeting.id
+                and participant.user_id = (select auth.uid())::text
+            )
+          )
+      )
     )
   );
 
@@ -2043,5 +2157,46 @@ $$;
 
 revoke all on function public.delete_workspace_meeting(text) from public, anon;
 grant execute on function public.delete_workspace_meeting(text) to authenticated;
+
+alter table public.shared_teams
+  add column if not exists created_by text references public.profiles(id) on delete set null;
+alter table public.teams
+  add column if not exists created_by text references public.profiles(id) on delete set null;
+alter table public.teams
+  alter column created_by set default (auth.uid())::text;
+
+create index if not exists shared_teams_created_by_idx
+  on public.shared_teams (created_by);
+create index if not exists shared_teams_member_ids_idx
+  on public.shared_teams using gin ((coalesce(data -> 'memberIds', '[]'::jsonb)));
+create index if not exists teams_created_by_idx
+  on public.teams (created_by);
+create index if not exists teams_member_ids_idx
+  on public.teams using gin (member_ids);
+
+create or replace function private.prevent_team_creator_change()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.id is distinct from old.id
+    or new.created_by is distinct from old.created_by then
+    raise exception 'Team identity cannot be changed.'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.prevent_team_creator_change() from public, anon, authenticated;
+drop trigger if exists prevent_shared_team_creator_change on public.shared_teams;
+create trigger prevent_shared_team_creator_change
+  before update on public.shared_teams
+  for each row execute function private.prevent_team_creator_change();
+drop trigger if exists prevent_team_creator_change on public.teams;
+create trigger prevent_team_creator_change
+  before update on public.teams
+  for each row execute function private.prevent_team_creator_change();
 
 notify pgrst, 'reload schema';
