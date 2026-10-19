@@ -1,13 +1,9 @@
-alter table public.shared_teams
-  add column if not exists created_by text references public.profiles(id) on delete set null;
 alter table public.teams
   add column if not exists created_by text references public.profiles(id) on delete set null;
 
 alter table public.teams
   alter column created_by set default (auth.uid())::text;
 
-create index if not exists shared_teams_created_by_idx
-  on public.shared_teams (created_by);
 create index if not exists shared_teams_member_ids_idx
   on public.shared_teams using gin ((coalesce(data -> 'memberIds', '[]'::jsonb)));
 create index if not exists teams_created_by_idx
@@ -31,14 +27,31 @@ end;
 $$;
 
 revoke all on function private.prevent_team_creator_change() from public, anon, authenticated;
-drop trigger if exists prevent_shared_team_creator_change on public.shared_teams;
-create trigger prevent_shared_team_creator_change
-  before update on public.shared_teams
-  for each row execute function private.prevent_team_creator_change();
 drop trigger if exists prevent_team_creator_change on public.teams;
 create trigger prevent_team_creator_change
   before update on public.teams
   for each row execute function private.prevent_team_creator_change();
+
+create or replace function private.prevent_shared_team_identity_change()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.id is distinct from old.id
+    or new.data ->> 'createdBy' is distinct from old.data ->> 'createdBy' then
+    raise exception 'Team identity cannot be changed.'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.prevent_shared_team_identity_change() from public, anon, authenticated;
+drop trigger if exists prevent_shared_team_identity_change on public.shared_teams;
+create trigger prevent_shared_team_identity_change
+  before update on public.shared_teams
+  for each row execute function private.prevent_shared_team_identity_change();
 
 drop policy if exists "Workspace collaborators read authorized records" on public.workspace_records;
 drop policy if exists "Authorized collaborators read workspace records" on public.workspace_records;
@@ -130,7 +143,7 @@ create policy "Team creators and members read shared teams"
   using (
     (select private.is_active_workspace_user())
     and (
-      created_by = (select auth.uid())::text
+      data ->> 'createdBy' = (select auth.uid())::text
       or coalesce(data -> 'memberIds', '[]'::jsonb)
         @> jsonb_build_array((select auth.uid())::text)
     )
@@ -143,7 +156,7 @@ create policy "Team creators create shared teams"
   for insert
   to authenticated
   with check (
-    created_by = (select auth.uid())::text
+    data ->> 'createdBy' = (select auth.uid())::text
     and (select private.is_active_workspace_user())
   );
 
@@ -156,7 +169,7 @@ create policy "Team creators and members update shared teams"
   using (
     (select private.is_active_workspace_user())
     and (
-      created_by = (select auth.uid())::text
+      data ->> 'createdBy' = (select auth.uid())::text
       or coalesce(data -> 'memberIds', '[]'::jsonb)
         @> jsonb_build_array((select auth.uid())::text)
     )
@@ -172,7 +185,7 @@ create policy "Team creators and members delete shared teams"
   using (
     (select private.is_active_workspace_user())
     and (
-      created_by = (select auth.uid())::text
+      data ->> 'createdBy' = (select auth.uid())::text
       or coalesce(data -> 'memberIds', '[]'::jsonb)
         @> jsonb_build_array((select auth.uid())::text)
     )

@@ -224,7 +224,6 @@ const persistCollectionForUser = async (ownerId, key, value, previousValue = nul
         .map((team) => ({
           id: String(team.id),
           data: teamData(team),
-          created_by: team.createdBy || null,
           created_at: team.createdAt || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })),
