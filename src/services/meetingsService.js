@@ -62,7 +62,10 @@ const toEmailMeeting = (meeting) => {
   const users = getData(KEYS.users, [])
   const company = getData(KEYS.companies, []).find((c) => c.id === meeting.companyId)
   const responsible = users.find((u) => u.id === meeting.responsibleId)
-  const { companyId, responsibleId, ...rest } = meeting
+  const {
+    companyId, responsibleId, workspaceOwnerId, workspaceShared, sharedOwnerId,
+    ...rest
+  } = meeting
   return {
     ...rest,
     companyName: company?.name || meeting.companyName || '',
@@ -71,13 +74,14 @@ const toEmailMeeting = (meeting) => {
 }
 
 // One place that sends every meeting email. It never breaks the app if it fails.
-const sendMeetingEmail = (meeting, action, { previous = null, note = '', createdByName = '' } = {}) => {
+const sendMeetingEmail = (meeting, action, { previous = null, note = '', createdByName = '', updatedByName = '' } = {}) => {
   const recipients = buildRecipients(meeting)
   if (!recipients.length) return
   sendMeetingInvitations(toEmailMeeting(meeting), recipients, action, {
     previous: previous ? toEmailMeeting(previous) : null,
     note,
     createdByName,
+    updatedByName,
   }).catch((error) => {
     console.warn(`Meeting ${action} email was not sent:`, error.message)
   })
@@ -182,7 +186,7 @@ export const rescheduleMeeting = async (id, { date, startTime, reason }, actorNa
       id,
       updated.companyId
     )
-    sendMeetingEmail(updated, 'rescheduled', { previous, note: reason })
+    sendMeetingEmail(updated, 'rescheduled', { previous, note: reason, updatedByName: actorName })
   }
   return updated
 }
