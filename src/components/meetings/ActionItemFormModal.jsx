@@ -7,6 +7,7 @@ import Textarea from '../ui/Textarea'
 import { ACTION_STATUSES, PRIORITIES } from '../../data/seedData'
 import { required } from '../../utils/validators'
 import { todayKey } from '../../utils/format'
+import { getMeetingParticipantIds } from '../../utils/meetingAccess'
 
 const EMPTY = {
   title: '', description: '', status: 'To Do', priority: 'Medium',
@@ -33,17 +34,28 @@ const ActionItemFormModal = ({ open, onClose, onSubmit, item, meetings = [], com
     setValues((v) => {
       if (key === 'meetingId') {
         const meeting = meetings.find((m) => m.id === value)
-        return { ...v, meetingId: value, companyId: meeting?.companyId || v.companyId }
+        const participantIds = getMeetingParticipantIds(meeting)
+        const assigneeId = meeting && !participantIds.includes(String(v.assigneeId)) ? '' : v.assigneeId
+        return { ...v, meetingId: value, companyId: meeting?.companyId || v.companyId, assigneeId }
       }
       return { ...v, [key]: value }
     })
     setErrors((prev) => ({ ...prev, [key]: undefined }))
   }
 
+  const selectedMeeting = meetings.find((meeting) => String(meeting.id) === String(values.meetingId))
+  const meetingParticipantIds = getMeetingParticipantIds(selectedMeeting)
+  const assigneeUsers = selectedMeeting
+    ? users.filter((user) => meetingParticipantIds.includes(String(user.id)))
+    : users
+
   const submit = () => {
     const next = {}
     if (required(values.title)) next.title = 'Give the action item a title.'
     if (required(values.assigneeId)) next.assigneeId = 'Assign this to someone.'
+    else if (selectedMeeting && !meetingParticipantIds.includes(String(values.assigneeId))) {
+      next.assigneeId = 'Choose a participant from this meeting.'
+    }
     if (required(values.dueDate)) next.dueDate = 'Set a due date.'
     setErrors(next)
     if (Object.keys(next).length) return
@@ -70,7 +82,15 @@ const ActionItemFormModal = ({ open, onClose, onSubmit, item, meetings = [], com
         <div className="sm:col-span-2">
           <Textarea label="Description" value={values.description} onChange={set('description')} placeholder="What needs to happen, and what does done look like?" />
         </div>
-        <Select label="Assignee" value={values.assigneeId} onChange={set('assigneeId')} error={errors.assigneeId} placeholder="Select a person" options={users.map((u) => ({ value: u.id, label: u.name }))} />
+        <Select
+          label="Assignee"
+          value={values.assigneeId}
+          onChange={set('assigneeId')}
+          error={errors.assigneeId}
+          placeholder={selectedMeeting && assigneeUsers.length === 0 ? 'No meeting participants' : 'Select a person'}
+          hint={selectedMeeting ? 'Only participants of this meeting can be assigned.' : undefined}
+          options={assigneeUsers.map((u) => ({ value: u.id, label: u.name }))}
+        />
         <Input label="Due date" type="date" value={values.dueDate} onChange={set('dueDate')} error={errors.dueDate} />
         <Select label="Priority" value={values.priority} onChange={set('priority')} options={PRIORITIES} />
         <Select label="Status" value={values.status} onChange={set('status')} options={ACTION_STATUSES} />

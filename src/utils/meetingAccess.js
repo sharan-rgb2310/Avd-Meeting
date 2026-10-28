@@ -10,6 +10,13 @@ const participantIds = (participants) => {
     .map(String)
 }
 
+export const getMeetingParticipantIds = (meeting) => [
+  ...new Set([
+    ...participantIds(meeting?.participant_ids),
+    ...participantIds(meeting?.participants),
+  ]),
+]
+
 export const canUserViewMeeting = (meeting, userId) => {
   if (!meeting || !userId) return false
 
@@ -22,10 +29,7 @@ export const canUserViewMeeting = (meeting, userId) => {
     || meeting.created_by
 
   return String(ownerId || '') === currentUserId
-    || [
-      ...participantIds(meeting.participant_ids),
-      ...participantIds(meeting.participants),
-    ].includes(currentUserId)
+    || getMeetingParticipantIds(meeting).includes(currentUserId)
 }
 
 export const canUserViewWorkspaceMeeting = (row, userId) =>

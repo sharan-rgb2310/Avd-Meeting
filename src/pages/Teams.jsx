@@ -23,6 +23,7 @@ import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { DEPARTMENTS } from '../data/seedData'
 import { sortBy } from '../utils/format'
+import { isTeamMember } from '../utils/accessControl'
 
 const Teams = () => {
   const navigate = useNavigate()
@@ -46,11 +47,12 @@ const Teams = () => {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
     const filtered = teams.filter((t) => {
+      const matchesAccess = isTeamMember(t, user?.id)
       const matchesQuery = !q || [t.name, t.department, userName(t.leadId)].some((v) => String(v).toLowerCase().includes(q))
-      return matchesQuery && (!department || t.department === department) && (!status || t.status === status)
+      return matchesAccess && matchesQuery && (!department || t.department === department) && (!status || t.status === status)
     })
     return sortBy(filtered, sort.key, sort.dir)
-  }, [teams, search, department, status, sort, users])
+  }, [teams, search, department, status, sort, users, user?.id])
 
   const { page, setPage, totalPages, slice, pageSize, count } = usePagination(rows, 8)
   const hasFilters = Boolean(search || department || status)
@@ -153,6 +155,7 @@ const Teams = () => {
       <TeamFormModal
         open={formOpen}
         team={editing}
+        teams={teams}
         users={users}
         onClose={() => { setFormOpen(false); setEditing(null) }}
         onSubmit={(values) => {

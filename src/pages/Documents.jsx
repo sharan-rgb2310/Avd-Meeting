@@ -23,6 +23,7 @@ import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { DOCUMENT_TYPES } from '../data/seedData'
 import { fileSize, formatDate, sortBy } from '../utils/format'
+import { canViewDocument } from '../utils/accessControl'
 
 const TYPE_TONES = { PDF: 'red', DOCX: 'blue', XLSX: 'green', PPTX: 'orange', PNG: 'purple', JPG: 'purple', MP4: 'cyan' }
 
@@ -57,11 +58,13 @@ const Documents = () => {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
     const filtered = documents.filter((d) => {
+      const meeting = meetings.find((itemMeeting) => String(itemMeeting.id) === String(d.meetingId))
+      const matchesAccess = canViewDocument(d, meeting, user?.id)
       const matchesQuery = !q || [d.name, meetingTitle(d.meetingId), companyName(d.companyId)].some((v) => String(v).toLowerCase().includes(q))
-      return matchesQuery && (!meetingId || d.meetingId === meetingId) && (!companyId || d.companyId === companyId) && (!type || d.type === type)
+      return matchesAccess && matchesQuery && (!meetingId || d.meetingId === meetingId) && (!companyId || d.companyId === companyId) && (!type || d.type === type)
     })
     return sortBy(filtered, sort.key, sort.dir)
-  }, [documents, search, meetingId, companyId, type, sort, meetings, companies])
+  }, [documents, search, meetingId, companyId, type, sort, meetings, companies, user?.id])
 
   const { page, setPage, totalPages, slice, pageSize, count } = usePagination(rows, 8)
 
