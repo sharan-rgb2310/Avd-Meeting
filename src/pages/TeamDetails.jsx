@@ -20,6 +20,7 @@ import useLoading from '../hooks/useLoading'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, formatTime, relativeDay } from '../utils/format'
+import { isTeamMember } from '../utils/accessControl'
 
 const TeamDetails = () => {
   const { id } = useParams()
@@ -29,6 +30,7 @@ const TeamDetails = () => {
   const loading = useLoading(320)
 
   const [team] = useStore(() => getData(KEYS.teams, []).find((t) => t.id === id) || null, [id])
+  const [teams] = useStore(() => getData(KEYS.teams, []))
   const [users] = useStore(() => getData(KEYS.users, []))
   const [meetings] = useStore(() => getData(KEYS.meetings, []).filter((m) => m.teamId === id), [id])
   const [allActionItems] = useStore(() => getData(KEYS.actionItems, []))
@@ -38,8 +40,8 @@ const TeamDetails = () => {
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   if (loading) return <LoadingSkeleton rows={6} />
-  if (!team) {
-    return <ErrorState title="Team not found" description="This team may have been deleted." onRetry={() => navigate('/teams')} />
+  if (!team || !isTeamMember(team, user?.id)) {
+    return <ErrorState title="Team not available" description="You can view this team only when you are one of its members." onRetry={() => navigate('/teams')} />
   }
 
   const members = users.filter((u) => (team.memberIds || []).includes(u.id))
@@ -168,6 +170,7 @@ const TeamDetails = () => {
       <TeamFormModal
         open={editOpen}
         team={team}
+        teams={teams}
         users={users}
         onClose={() => setEditOpen(false)}
         onSubmit={(values) => {

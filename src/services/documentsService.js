@@ -114,7 +114,8 @@ export const createDocument = async (values, actorName = 'Someone') => {
 
 export const renameDocument = (id, name) => updateItem(KEYS.documents, id, { name })
 export const removeDocument = async (id) => {
-  if (findItem(KEYS.documents, id)?.fileKey) await removeFile(id)
+  const document = findItem(KEYS.documents, id)
+  if (document?.fileKey) await removeFile(document.fileKey)
   return deleteItem(KEYS.documents, id)
 }
 

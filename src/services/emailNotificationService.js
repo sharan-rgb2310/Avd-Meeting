@@ -20,6 +20,7 @@ export const sendMeetingInvitations = async (
       previous: options.previous ?? null,
       note: options.note,
       createdByName: options.createdByName,
+      updatedByName: options.updatedByName,
     },
   })
 

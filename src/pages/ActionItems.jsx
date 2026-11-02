@@ -17,6 +17,8 @@ import useLoading from '../hooks/useLoading'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { PRIORITIES } from '../data/seedData'
+import { getMeetingParticipantIds } from '../utils/meetingAccess'
+import { canViewActionItem } from '../utils/accessControl'
 
 const ActionItems = () => {
   const { toast } = useToast()
@@ -41,15 +43,18 @@ const ActionItems = () => {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return items.filter((i) => {
+      const meeting = meetings.find((itemMeeting) => String(itemMeeting.id) === String(i.meetingId))
+      const matchesAccess = canViewActionItem(i, meeting, user?.id)
       const matchesQuery = !q || [i.title, i.description].some((v) => String(v || '').toLowerCase().includes(q))
       return (
+        matchesAccess &&
         matchesQuery &&
         (!meetingId || i.meetingId === meetingId) &&
         (!assigneeId || i.assigneeId === assigneeId) &&
         (!priority || i.priority === priority)
       )
     })
-  }, [items, search, meetingId, assigneeId, priority])
+  }, [items, meetings, search, meetingId, assigneeId, priority, user?.id])
 
   const hasFilters = Boolean(search || meetingId || assigneeId || priority)
   const reset = () => {
@@ -58,6 +63,11 @@ const ActionItems = () => {
     setAssigneeId('')
     setPriority('')
   }
+
+  const assigningMeeting = meetings.find((meeting) => String(meeting.id) === String(assigning?.meetingId || ''))
+  const assignableUsers = assigningMeeting
+    ? users.filter((person) => getMeetingParticipantIds(assigningMeeting).includes(String(person.id)))
+    : users
 
   const save = (values) => {
     if (editing) {
@@ -158,8 +168,8 @@ const ActionItems = () => {
           label="Assignee"
           value={assignTo}
           onChange={(e) => setAssignTo(e.target.value)}
-          placeholder="Select a person"
-          options={users.map((u) => ({ value: u.id, label: `${u.name} · ${u.role}` }))}
+          placeholder={assigningMeeting && assignableUsers.length === 0 ? 'No meeting participants' : 'Select a person'}
+          options={assignableUsers.map((u) => ({ value: u.id, label: `${u.name} · ${u.role}` }))}
         />
       </Modal>
 

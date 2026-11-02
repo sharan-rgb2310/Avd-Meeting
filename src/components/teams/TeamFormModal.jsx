@@ -7,12 +7,14 @@ import Textarea from '../ui/Textarea'
 import MultiSelect from '../ui/MultiSelect'
 import { DEPARTMENTS } from '../../data/seedData'
 import { required } from '../../utils/validators'
+import { availableTeamMembers } from '../../utils/teamHelpers'
 
 const EMPTY = { name: '', department: 'Sales', leadId: '', memberIds: [], status: 'Active', description: '' }
 
-const TeamFormModal = ({ open, onClose, onSubmit, team, users = [] }) => {
+const TeamFormModal = ({ open, onClose, onSubmit, team, teams = [], users = [] }) => {
   const [values, setValues] = useState(EMPTY)
   const [errors, setErrors] = useState({})
+  const memberUsers = availableTeamMembers(users, teams, team)
 
   useEffect(() => {
     if (open) {
@@ -60,7 +62,7 @@ const TeamFormModal = ({ open, onClose, onSubmit, team, users = [] }) => {
         <div className="sm:col-span-2">
           <MultiSelect
             label="Members"
-            options={users.map((u) => ({ value: u.id, label: u.name, description: `${u.role} · ${u.department || 'No department'}` }))}
+            options={memberUsers.map((u) => ({ value: u.id, label: u.name, description: `${u.role} · ${u.department || 'No department'}` }))}
             value={values.memberIds || []}
             onChange={(ids) => setValues((v) => ({ ...v, memberIds: ids }))}
           />
