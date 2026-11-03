@@ -33,6 +33,12 @@ export const validateMeeting = (values, { manualCompany = false } = {}) => {
   } else if (required(values.companyId)) {
     errors.companyId = 'Select a company or enter one manually.'
   }
+  if ((values.type === 'Virtual' || values.type === 'Hybrid') && required(values.meetingLink)) {
+    errors.meetingLink = 'Enter a virtual meeting link.'
+  }
+  if ((values.type === 'In Person' || values.type === 'Hybrid') && required(values.location)) {
+    errors.location = 'Enter a meeting location.'
+  }
   if (required(values.date)) errors.date = 'Pick a meeting date.'
   if (required(values.startTime)) errors.startTime = 'Set a start time.'
   return errors
