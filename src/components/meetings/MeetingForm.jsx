@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Repeat, Save, Send } from 'lucide-react'
+import { useToast } from '../../context/ToastContext'
 import Card, { CardHeader } from '../ui/Card'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
@@ -21,6 +22,7 @@ export const emptyMeeting = () => ({
 
 const MeetingForm = ({ initialValues, companies, users, onSubmit, onSaveDraft, onReschedule, submitLabel = 'Create meeting', title, description }) => {
   const navigate = useNavigate()
+  const { toast } = useToast()
   const [values, setValues] = useState(initialValues)
   const [errors, setErrors] = useState({})
   // Company is either picked from the list or typed in when it isn't there yet.
@@ -49,15 +51,26 @@ const MeetingForm = ({ initialValues, companies, users, onSubmit, onSaveDraft, o
     [users]
   )
 
-  const submit = (e) => {
-    e.preventDefault()
+  const validateAndSave = (save) => {
     const next = validateMeeting(values, { manualCompany })
     setErrors(next)
     if (Object.keys(next).length) {
+      if (next.meetingLink && next.location) {
+        toast('Add a virtual meeting link and meeting location before saving.', 'warning')
+      } else if (next.meetingLink) {
+        toast('Add a virtual meeting link before saving.', 'warning')
+      } else if (next.location) {
+        toast('Add a meeting location before saving.', 'warning')
+      }
       document.querySelector('[aria-invalid="true"]')?.focus()
       return
     }
-    onSubmit(values)
+    save(values)
+  }
+
+  const submit = (e) => {
+    e.preventDefault()
+    validateAndSave(onSubmit)
   }
 
   return (
@@ -93,15 +106,15 @@ const MeetingForm = ({ initialValues, companies, users, onSubmit, onSaveDraft, o
 
           {/* Conditional link / location — full width so Meeting date stays on its own row */}
           {values.type === 'Virtual' && (
-            <Input label="Virtual Meeting Link" type="url" value={values.meetingLink || ''} onChange={set('meetingLink')} placeholder="https://..." containerClassName="sm:col-span-2" />
+            <Input label="Virtual Meeting Link" type="url" value={values.meetingLink || ''} onChange={set('meetingLink')} error={errors.meetingLink} placeholder="https://..." containerClassName="sm:col-span-2" />
           )}
           {values.type === 'In Person' && (
-            <Input label="Location" value={values.location || ''} onChange={set('location')} placeholder="Enter meeting location" containerClassName="sm:col-span-2" />
+            <Input label="Location" value={values.location || ''} onChange={set('location')} error={errors.location} placeholder="Enter meeting location" containerClassName="sm:col-span-2" />
           )}
           {values.type === 'Hybrid' && (
             <>
-              <Input label="Virtual Meeting Link" type="url" value={values.meetingLink || ''} onChange={set('meetingLink')} placeholder="https://..." />
-              <Input label="Location" value={values.location || ''} onChange={set('location')} placeholder="Enter meeting location" />
+              <Input label="Virtual Meeting Link" type="url" value={values.meetingLink || ''} onChange={set('meetingLink')} error={errors.meetingLink} placeholder="https://..." />
+              <Input label="Location" value={values.location || ''} onChange={set('location')} error={errors.location} placeholder="Enter meeting location" />
             </>
           )}
 
@@ -145,7 +158,7 @@ const MeetingForm = ({ initialValues, companies, users, onSubmit, onSaveDraft, o
             Cancel
           </Button>
           {onSaveDraft && (
-            <Button type="button" variant="secondary" icon={Save} onClick={() => onSaveDraft(values)}>
+            <Button type="button" variant="secondary" icon={Save} onClick={() => validateAndSave(onSaveDraft)}>
               Save draft
             </Button>
           )}
