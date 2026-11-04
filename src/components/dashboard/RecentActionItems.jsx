@@ -14,7 +14,7 @@ const RecentActionItems = ({ items, users }) => {
     <Card>
       <CardHeader
         title="Recent action items"
-        description="Follow-ups that still need an owner's attention"
+        description="Manage Responsible Person"
         action={
           <button type="button" onClick={() => navigate('/action-items')} className="text-[13px] font-medium text-brand hover:text-brand-700">
             View all

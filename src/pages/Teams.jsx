@@ -111,7 +111,7 @@ const Teams = () => {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Teams"
+        title="Team Management"
         description="Manage your teams and their members."
         actions={
           <Button icon={Plus} onClick={() => { setEditing(null); setFormOpen(true) }}>
@@ -129,7 +129,7 @@ const Teams = () => {
           onReset={reset}
           filters={[
             { key: 'department', placeholder: 'All departments', value: department, onChange: setDepartment, options: DEPARTMENTS },
-            { key: 'status', placeholder: 'All statuses', value: status, onChange: setStatus, options: ['Active', 'Inactive'] },
+            { key: 'status', placeholder: 'All status', value: status, onChange: setStatus, options: ['Active', 'Inactive'] },
           ]}
         />
         <Table

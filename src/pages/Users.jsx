@@ -184,7 +184,7 @@ const UsersPage = () => {
           onReset={reset}
           filters={[
             { key: 'role', placeholder: 'All roles', value: role, onChange: setRole, options: [...new Set([...ROLES, ...LEGACY_ROLES.filter((r) => users.some((u) => u.role === r)), ...users.map((u) => u.role).filter(Boolean)])] },
-            { key: 'status', placeholder: 'All statuses', value: status, onChange: setStatus, options: USER_STATUSES },
+            { key: 'status', placeholder: 'All status', value: status, onChange: setStatus, options: USER_STATUSES },
             { key: 'auth', placeholder: 'All auth methods', value: authMethod, onChange: setAuthMethod, options: AUTH_METHODS },
           ]}
         />

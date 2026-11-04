@@ -9,6 +9,7 @@ import { cx, relativeDay, todayKey } from '../../utils/format'
 const COLUMN_STYLES = {
   'To Do': { header: 'text-brand-700', chip: 'bg-brand-50 text-brand-700', bar: 'bg-brand' },
   'In Progress': { header: 'text-cyan-700', chip: 'bg-cyan-50 text-cyan-700', bar: 'bg-cyan' },
+  Review: { header: 'text-brand-700', chip: 'bg-brand-50 text-brand-700', bar: 'bg-brand' },
   Blocked: { header: 'text-danger', chip: 'bg-red-50 text-danger', bar: 'bg-danger' },
   Done: { header: 'text-emerald-700', chip: 'bg-emerald-50 text-emerald-700', bar: 'bg-success' },
 }
@@ -95,7 +96,7 @@ const KanbanBoard = ({ items, meetings, companies, users, currentUserId, onEdit,
   }
 
   return (
-    <div className="grid grid-flow-col auto-cols-[minmax(272px,1fr)] gap-4 overflow-x-auto pb-2 lg:grid-flow-row lg:auto-cols-auto lg:grid-cols-4 lg:overflow-visible">
+    <div className="grid grid-flow-col auto-cols-[minmax(272px,1fr)] gap-4 overflow-x-auto pb-2 lg:grid-flow-row lg:auto-cols-auto lg:grid-cols-5 lg:overflow-visible">
       {ACTION_STATUSES.map((status) => {
         const columnItems = items.filter((i) => i.status === status)
         const style = COLUMN_STYLES[status]

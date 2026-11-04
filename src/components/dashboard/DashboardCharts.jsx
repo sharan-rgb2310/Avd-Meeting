@@ -15,6 +15,7 @@ const STATUS_COLORS = {
 const ACTION_COLORS = {
   'To Do': '#2563EB',
   'In Progress': '#06B6D4',
+  Review: '#2563EB',
   Blocked: '#EF4444',
   Done: '#10B981',
 }
@@ -36,7 +37,7 @@ const tooltipStyle = {
 
 export const MeetingsByStatusChart = ({ data }) => (
   <Card>
-    <CardHeader title="Meetings by status" description="Across the whole workspace" />
+    <CardHeader title="Meetings status" description="Across the whole workspace" />
     <div className="h-[240px] px-3 py-4">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>

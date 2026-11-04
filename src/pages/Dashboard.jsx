@@ -76,7 +76,6 @@ const Dashboard = () => {
     <div className="space-y-5">
       <PageHeader
         title={`${greeting()}, ${firstName} 👋`}
-        description="Here's what's happening with your meetings and activities today."
         actions={
           <Button icon={Plus} onClick={() => navigate('/meetings/create')}>
             Create meeting

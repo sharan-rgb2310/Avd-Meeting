@@ -215,10 +215,6 @@ const Authentication = () => {
               </span>
               <div>
                 <h3 className="text-[13px] font-semibold text-ink">Workspace authentication settings</h3>
-                <p className="mt-1 text-xs leading-relaxed text-muted">
-                  These preferences are saved with your workspace. Supabase Auth handles connected accounts and
-                  invitations.
-                </p>
                 <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted">
                   <UserPlus size={13} /> New users select their role during signup.
                 </p>
