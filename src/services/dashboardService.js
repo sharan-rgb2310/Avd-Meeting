@@ -64,7 +64,7 @@ export const getMeetingsByStatus = () => {
 
 export const getActionItemCompletion = () => {
   const items = getData(KEYS.actionItems, [])
-  const statuses = ['To Do', 'In Progress', 'Blocked', 'Done']
+  const statuses = ['To Do', 'In Progress', 'Review', 'Blocked', 'Done']
   return statuses.map((status) => ({ status, value: items.filter((i) => i.status === status).length }))
 }
 

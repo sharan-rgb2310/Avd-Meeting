@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from '../components/layout/AppLayout'
-import ProtectedRoute, { PublicOnlyRoute } from './ProtectedRoute'
+import ProtectedRoute, { PublicOnlyRoute, RoleRoute } from './ProtectedRoute'
 import { useAuth } from '../context/AuthContext'
 
 const Login = lazy(() => import('../pages/Login'))
@@ -32,7 +32,6 @@ const routePreloaders = [
   () => import('../pages/Teams'),
   () => import('../pages/Users'),
   () => import('../pages/Notifications'),
-  () => import('../pages/Authentication'),
   () => import('../pages/Profile'),
   () => import('../pages/CompanyDetails'),
   () => import('../pages/CreateMeeting'),
@@ -122,7 +121,14 @@ const AppRoutes = () => {
           <Route path="/teams/:id" element={<TeamDetails />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/notifications" element={<Notifications />} />
-          <Route path="/authentication" element={<Authentication />} />
+          <Route
+            path="/authentication"
+            element={
+              <RoleRoute allowedRoles={['Admin', 'Manager']}>
+                <Authentication />
+              </RoleRoute>
+            }
+          />
           <Route path="/profile" element={<Profile />} />
         </Route>
       </Route>

@@ -7,31 +7,38 @@ import { NAV_ITEMS } from './navItems'
 import { cx } from '../../utils/format'
 import { useAuth } from '../../context/AuthContext'
 
-export const NavList = ({ onNavigate }) => (
-  <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4" aria-label="Main">
-    {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-      <NavLink
-        key={to}
-        to={to}
-        onClick={onNavigate}
-        className={({ isActive }) =>
-          cx(
-            'group relative flex items-center gap-3 rounded-[10px] px-3 py-2 text-[13px] font-medium transition-colors',
-            isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
-          )
-        }
-      >
-        {({ isActive }) => (
-          <>
-            {isActive && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" aria-hidden="true" />}
-            <Icon size={17} className={isActive ? 'text-accent' : ''} aria-hidden="true" />
-            {label}
-          </>
-        )}
-      </NavLink>
-    ))}
-  </nav>
-)
+export const NavList = ({ onNavigate }) => {
+  const { user } = useAuth()
+  const visibleItems = NAV_ITEMS.filter(
+    ({ to }) => to !== '/authentication' || ['Admin', 'Manager'].includes(user?.role)
+  )
+
+  return (
+    <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4" aria-label="Main">
+      {visibleItems.map(({ to, label, icon: Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            cx(
+              'group relative flex items-center gap-3 rounded-[10px] px-3 py-2 text-[13px] font-medium transition-colors',
+              isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              {isActive && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" aria-hidden="true" />}
+              <Icon size={17} className={isActive ? 'text-accent' : ''} aria-hidden="true" />
+              {label}
+            </>
+          )}
+        </NavLink>
+      ))}
+    </nav>
+  )
+}
 
 export const SidebarFooter = ({ onNavigate }) => {
   const { user, logout } = useAuth()

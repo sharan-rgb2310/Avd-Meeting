@@ -9,6 +9,12 @@ export const ProtectedRoute = () => {
   return <Outlet />
 }
 
+export const RoleRoute = ({ allowedRoles, children }) => {
+  const { user } = useAuth()
+  if (!allowedRoles.includes(user?.role)) return <Navigate to="/dashboard" replace />
+  return children
+}
+
 export const PublicOnlyRoute = ({ children }) => {
   const { isAuthenticated, ready } = useAuth()
   if (!ready) return null

@@ -219,7 +219,7 @@ const Meetings = () => {
           filters={[
             { key: 'meetingType', placeholder: 'All types', value: meetingType, onChange: setMeetingType, options: MEETING_TYPES },
             { key: 'company', placeholder: 'All companies', value: companyId, onChange: setCompanyId, options: companies.map((c) => ({ value: c.id, label: c.name })) },
-            { key: 'status', placeholder: 'All statuses', value: status, onChange: setStatus, options: MEETING_STATUSES },
+            { key: 'status', placeholder: 'All status', value: status, onChange: setStatus, options: MEETING_STATUSES },
           ]}
           trailing={
             <>

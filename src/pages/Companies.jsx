@@ -180,7 +180,7 @@ const Companies = () => {
           onReset={resetFilters}
           filters={[
             { key: 'industry', placeholder: 'All industries', options: INDUSTRIES, value: industry, onChange: setIndustry },
-            { key: 'status', placeholder: 'All statuses', options: COMPANY_STATUSES, value: status, onChange: setStatus },
+            { key: 'status', placeholder: 'Select status', options: COMPANY_STATUSES, value: status, onChange: setStatus },
             {
               key: 'sort',
               placeholder: 'Sort by',

@@ -11,7 +11,7 @@ export const MEETING_TYPES = [
   { value: 'In Person', label: 'In-Person Meeting' },
   { value: 'Hybrid', label: 'Hybrid Meeting' },
 ]
-export const ACTION_STATUSES = ['To Do', 'In Progress', 'Blocked', 'Done']
+export const ACTION_STATUSES = ['To Do', 'In Progress', 'Review', 'Blocked', 'Done']
 export const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
 export const DOCUMENT_TYPES = ['PDF', 'DOCX', 'XLSX', 'PPTX', 'PNG', 'JPG', 'MP4']
 export const PARTICIPANT_TYPES = ['Organizer', 'Team Member', 'Guest', 'Optional']

@@ -19,6 +19,7 @@ const GENERIC_TONES = {
   'Not Invited': 'neutral',
   'To Do': 'blue',
   'In Progress': 'cyan',
+  Review: 'blue',
   Blocked: 'red',
   Done: 'green',
 }
