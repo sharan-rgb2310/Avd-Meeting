@@ -98,7 +98,7 @@ export const SidebarFooter = ({ onNavigate }) => {
 
 const Sidebar = () => (
   <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-[240px] flex-col bg-navy">
-    <div className="flex h-16 items-center border-b border-white/10 px-5">
+    <div className="flex h-16 shrink-0 items-center justify-center border-b border-white/10 bg-[#FFFFFF] px-5">
       <Logo size="md" tone="light" variant="workspace" />
     </div>
     <NavList />
